@@ -144,3 +144,6 @@
 - erklärt: 2D-Traversierung; Modulo + and; till-Pattern aus Doku  (2026-10-09)
 - mit Hilfe: j innen, i außen; if in den inneren Loop einordnen  (2026-10-09)
 - selbstständig: Schachbrettmuster mit Modulo; Shadowing-Fix in main.py  (2026-10-09)
+- erklärt: 2D-Traversierung mit zwei for; Modulo + and für Schachbrettmuster; till-Pattern aus Doku (Grounds.Soil) – bis 2026-10-09 erarbeitet.  (2026-10-09)
+- selbstständig: Schachbrettmuster mit x % 2 == 0 and y % 2 == 0; Shadowing-Fix in main.py (j innen, i außen) – 2026-10-09.  (2026-10-09)
+- erklärt: 2D-Traversierung; Modulo + and; till-Pattern aus Grounds-Doku – bis 2026-10-09.  (2026-10-09)
