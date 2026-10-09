@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """TFWR-Tutor: Prozesswächter + Pi (RPC) + macOS say.
 
-Befehle: run | status | pause | resume | now | still | install | uninstall | log
+Befehle: run | status | pause | resume | now | antwort | unlocked | still | install | uninstall | log
 Der LaunchAgent startet `run`. Ohne Spiel: nur pgrep alle paar Sekunden, keine Modellaufrufe.
 """
 import base64, fcntl, hashlib, json, os, plistlib, re, signal, subprocess, sys, threading, time, queue
@@ -286,11 +286,44 @@ def parse(answer):
 
 
 def save_progress(notes):
+    """Hängt Lernstand-Zeilen an. Exakte Duplikate werden ignoriert; „gezeigt“ ersetzt
+    ein vorhandenes „behandelt“ desselben Konzepts, aber nie umgekehrt."""
     old = PROGRESS.read_text() if PROGRESS.exists() else "# Lernstand\n\n"
+    lines = old.splitlines()
+    index = {}
+    for i, line in enumerate(lines):
+        m = re.match(r"^\s*-\s*(behandelt|gezeigt):\s*(.+?)\s*(?:\((\d{4}-\d{2}-\d{2})\))?\s*$", line)
+        if m:
+            index[m.group(2).strip()] = i
+    today = time.strftime("%Y-%m-%d")
+    changed = False
     for n in notes:
-        if ("- " + n) not in old:
-            old += "- %s  (%s)\n" % (n, time.strftime("%Y-%m-%d"))
-    PROGRESS.write_text(old)
+        m = re.match(r"^\s*(behandelt|gezeigt):\s*(.+?)\s*$", n)
+        if not m:
+            continue
+        status, concept = m.group(1), m.group(2).strip()
+        if concept in index:
+            i = index[concept]
+            if status == "gezeigt" and lines[i].lstrip().startswith("- behandelt:"):
+                lines[i] = "- gezeigt: %s  (%s)" % (concept, today)
+                changed = True
+        else:
+            lines.append("- %s: %s  (%s)" % (status, concept, today))
+            index[concept] = len(lines) - 1
+            changed = True
+    if changed:
+        PROGRESS.write_text("\n".join(lines) + "\n")
+
+
+def answer_path():
+    return STATE / "answer_in.txt"
+
+
+def manual_unlocks():
+    p = STATE / "manual_unlocks.txt"
+    if p.exists():
+        return [l.strip() for l in p.read_text().splitlines() if l.strip()]
+    return []
 
 
 def observation(reason, st, prev, png, first):
@@ -306,6 +339,9 @@ def observation(reason, st, prev, png, first):
         if prev and new:
             parts.append("NEU freigeschaltet: " + ", ".join(new))
         parts.append("# In-Game-Doku\n" + docs_for(new if (prev and new) else st["unlocks"]))
+    man = manual_unlocks()
+    if man:
+        parts.append("vom Lernenden gemeldet, nicht belegt: " + ", ".join(man))
     parts.append("Inventar: " + ", ".join("%s=%g" % kv for kv in st["items"].items()))
     return "\n\n".join(parts)
 
@@ -319,6 +355,7 @@ def session(gpid):
     continues = 0
     asked_hash = None
     forced = False
+    answer_text = None
     fails = 0
     ask_t, forced_last = 0.0, False
     try:
@@ -329,8 +366,13 @@ def session(gpid):
                 F_STILL.unlink(); hush(); pi.abort()
             if F_NOW.exists():
                 F_NOW.unlink(); hush(); pi.abort(); forced = True
+            if answer_path().exists():
+                txt = answer_path().read_text().strip()
+                answer_path().unlink(missing_ok=True)
+                if txt:
+                    hush(); pi.abort(); answer_text = txt
             paused = F_PAUSED.exists()
-            if paused and not forced:
+            if paused and not forced and answer_text is None:
                 if speaking(): hush()
                 continue
             try:
@@ -344,7 +386,7 @@ def session(gpid):
             st = read_state()
             if not st:
                 continue
-            h = hashlib.md5(json.dumps([st["code"], st["unlocks"]], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
+            h = hashlib.md5(json.dumps([st["code"], st["unlocks"], manual_unlocks()], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
             if ans is not None:
                 if h != asked_hash and not forced_last:
                     log("veraltet verworfen – Stand hat sich geändert")
@@ -369,7 +411,9 @@ def session(gpid):
                 continue
             # Anlass bestimmen
             reason = None
-            if forced:
+            if answer_text is not None:
+                reason = "ANTWORT DES LERNENDEN: %s" % answer_text
+            elif forced:
                 reason = "jetzt erklären (vom Lernenden angefordert, nicht SKIP)"
             elif h != sent_hash:
                 pending_since = pending_since or now
@@ -386,8 +430,8 @@ def session(gpid):
             last_shot = now
             pi.ask(observation(reason, st, prev, png, prev is None), png)
             log("analysiere: %s%s" % (reason, "" if png else " (ohne Bild)"))
-            ask_t, asked_hash, forced_last = now, h, forced
-            prev, sent_hash, pending_since, forced = st, h, None, False
+            ask_t, asked_hash, forced_last = now, h, (forced or answer_text is not None)
+            prev, sent_hash, pending_since, forced, answer_text = st, h, None, False, None
     finally:
         hush()
         pi.close()
@@ -444,6 +488,25 @@ def status():
         print("".join((STATE / "tutor.log").read_text().splitlines(True)[-4:]), end="")
 
 
+def cmd_answer(text):
+    text = (text or "").strip()
+    if not text:
+        print("Nutzung: python3 tutor.py antwort \"<text>\"")
+        return
+    answer_path().write_text(text + "\n")
+    print("Antwort aufgenommen – der Tutor geht gleich darauf ein.")
+
+
+def cmd_unlock(name):
+    name = (name or "").strip()
+    if not name:
+        print("Nutzung: python3 tutor.py unlocked \"<X>\"")
+        return
+    with open(STATE / "manual_unlocks.txt", "a") as f:
+        f.write(name + "\n")
+    print("Freischaltung notiert (vom Lernenden gemeldet, nicht belegt): %s" % name)
+
+
 if __name__ == "__main__":
     STATE.mkdir(parents=True, exist_ok=True)
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -454,6 +517,8 @@ if __name__ == "__main__":
     elif cmd == "pause": F_PAUSED.touch(); hush(); print("pausiert (bleibt, bis du resume sagst)")
     elif cmd == "resume": F_PAUSED.unlink(missing_ok=True); print("weiter")
     elif cmd == "now": hush(); F_NOW.touch(); print("erkläre gleich")
+    elif cmd == "antwort": cmd_answer(sys.argv[2] if len(sys.argv) > 2 else "")
+    elif cmd == "unlocked": cmd_unlock(sys.argv[2] if len(sys.argv) > 2 else "")
     elif cmd == "still": F_STILL.touch(); hush(); print("still")
     elif cmd == "log": os.execvp("tail", ["tail", "-f", str(STATE / "tutor.log")])
     else: print(__doc__)
