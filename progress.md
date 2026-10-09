@@ -177,3 +177,6 @@
 - mit Hilfe: Funktion do mit Schachbrett-Block eingerückt, Doppelpunkt ergänzt  (2026-10-09)
 - mit Hilfe: Erkenntnis dass if-Bedingung die for-Schleife nicht ersetzen kann, durch eigenen Bug sichtbar  (2026-10-09)
 - selbstständig: Code funktioniert, genutzt um Karotten-Stufe-sechs freizuschalten  (2026-10-09)
+- mit Hilfe: Kürbis-Logik mit Dead_Pumpkin-Erkennung aufgebaut, Reihenfolge harvest vor Prüfung noch zu korrigieren.  (2026-10-09)
+- selbstständig: Schachbrettmuster mit x modulo 2 und y modulo 2; Drohnenposition mit get_pos_x und get_pos_y; Funktion do in BaumKarotten.  (2026-10-09)
+- mit Hilfe: Kürbis-Logik mit Dead_Pumpkin-Erkennung aufgebaut, Baustein-Struktur und Reihenfolge noch offen.  (2026-10-09)

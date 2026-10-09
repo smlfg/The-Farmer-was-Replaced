@@ -486,21 +486,6 @@ def parse_notebook(answer):
     return out
 
 
-ACKS = ("Okay, ich schau mir das an.", "Gute Frage, Moment.", "Alles klar, ich schau auf deinen Code.",
-        "Verstanden, ich denk kurz mit.")
-
-
-def ack_phrase():
-    return ACKS[int(time.time()) % len(ACKS)]
-
-
-def greeting(d):
-    ziel = (d or {}).get("ziel")
-    if ziel:
-        return "Ich bin da. Zuletzt ging es um: %s. Ich schau mir gleich deinen Code an." % ziel
-    return "Ich bin da. Ich schau mir gleich deinen Code an."
-
-
 def notebook_line(d):
     if not d:
         return "Tutor-Notizbuch (vorläufig): noch leer"
@@ -779,10 +764,7 @@ def session(gpid):
     parts, modus = [], "normal"
     asked_prefetch = False
     shots_n = 0
-    filler_said = False
     notebook = load_notebook()  # überlebt Spielneustarts
-    say(greeting(notebook))      # sofort da sein, bevor die erste (langsame) Analyse fertig ist
-    last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
@@ -795,22 +777,22 @@ def session(gpid):
                 kind, val = ptt.results.get()
                 if kind == "error":
                     if val:
-                        say(val)
+                        log("Sprachfehler: %s" % val)
+                    cue("Basso")  # nur ein Ton – keine Ansagen, die ablenken
                     continue
                 intent = local_intent(val)
                 if intent == "pause":
-                    F_PAUSED.touch(); say("Okay, ich warte. Sag weiter, wenn du soweit bist.")
+                    F_PAUSED.touch(); cue("Pop")
                 elif intent == "weiter":
-                    F_PAUSED.unlink(missing_ok=True); say("Okay, weiter."); continues = 0
+                    F_PAUSED.unlink(missing_ok=True); cue("Tink"); continues = 0
                     last_spoke = 0.0
                 elif intent in ("langsamer", "schneller"):
                     w = words_per_part() + (-20 if intent == "langsamer" else 20)
                     F_DENSE.write_text(str(max(20, min(80, w))))
-                    say("Okay, ab jetzt kleinere Häppchen." if intent == "langsamer" else "Okay, ab jetzt mehr auf einmal.")
+                    cue("Pop")
                 else:
                     voice_text = val
-                    say(ack_phrase())  # sofort hörbar: Frage ist angekommen, nicht hilflos warten
-                    log("quittiert: Frage angekommen")
+                    log("Frage angekommen")
                 log("Sprachbefehl: %s" % (intent or "Frage an Tutor"))
             if ptt.active:  # Aufnahme/Transkription läuft: niemand sonst spricht oder analysiert
                 if pi.busy and not voice_pending:
@@ -826,7 +808,7 @@ def session(gpid):
                 answer_path().unlink(missing_ok=True)
                 if txt:
                     hush(); pi.abort(); parts = []; answer_text = txt
-                    say(ack_phrase()); log("quittiert: Antwort angekommen")
+                    log("Antwort angekommen")
             if voice_text is not None and not voice_pending:
                 hush(); pi.abort(); parts = []
             paused = F_PAUSED.exists()
@@ -889,8 +871,6 @@ def session(gpid):
             if pi.req >= CFG["renew_after"] and pi.ready() and not voice_pending and not parts:
                 log("frischer Pi-Kontext nach %d Analysen" % pi.req)
                 pi.close(); pi = Pi(); prev = None
-            if pi.busy and forced_last and not filler_said and now - ask_t > 20 and not speaking():
-                say("Ich bin gleich so weit."); filler_said = True; log("Zwischenmeldung beim Warten")
             if pi.busy:
                 if now - ask_t > CFG["analysis_timeout"]:
                     log("Analyse-Timeout"); pi.abort(); voice_pending = False
@@ -920,7 +900,7 @@ def session(gpid):
                     reason = "Code/Spielstand geändert"
             elif now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) * CFG["prefetch"] \
                     and (talking or now - last_spoke >= CFG["continue_after"]) and continues < CFG["max_continues"]:
-                reason = "weiter (Coach-Impuls fällig: nicht SKIP, nichts wiederholen)"
+                reason = "weiter (nur sprechen, wenn du etwas Lehrreiches beitragen kannst – sonst SKIP; nichts wiederholen)"
                 continues += 1
             if not reason:
                 continue
@@ -944,7 +924,6 @@ def session(gpid):
             asked_prefetch = reason.startswith("weiter")
             voice_pending = voice_text is not None
             ask_t, asked_hash, forced_last = now, h, urgent
-            filler_said = False
             prev, sent_hash, pending_since, forced, answer_text, voice_text = st, h, None, False, None, None
     finally:
         ptt.close()   # Mikrofon frei, Sprechtaste aus
