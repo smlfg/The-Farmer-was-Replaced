@@ -12,4 +12,36 @@ Lernfokus: Python-Syntax, algorithmische Logik und mentale Modelle – insbesond
 
 Siehe [CLAUDE.md](CLAUDE.md) für den kopierfertigen Implementierungsauftrag. Die erste Version soll bewusst klein sein und nach Möglichkeit vollständig lokal laufen.
 
-**Status:** Konzept und Implementierungsauftrag angelegt; ein laufender Agent ist noch nicht implementiert.
+**Status:** MVP läuft (Wächter + Pi + Thorsten-TTS), siehe unten.
+
+## Tutor – Betrieb
+
+Gesprochener Programmier-Tutor für „The Farmer Was Replaced“. Spiel öffnen → Tutor ist dabei.
+
+- **Wächter** (`tutor.py`, LaunchAgent): erkennt das echte Spiel-Binary, liest Code + Freischaltungen
+  nur lesend aus `save.json`/`*.py`, nimmt Screenshots nur vom Spielfenster (alle ~25 s), ohne Modellaufrufe.
+- **Pi** (`pi --mode rpc`, Modell `minimax/MiniMax-M3`, ohne Werkzeuge): ein Gesprächskontext pro Spielsitzung,
+  bekommt Screenshot + Code + belegte Doku, antwortet mit Lehrtext.
+- **Stimme**: Piper Thorsten via `pycoach-speak` ([mesh-ear-lock](https://github.com/smlfg/mesh-ear-lock)), Fallback `say`.
+- **Lernstand**: `progress.md` (behandelt / gezeigt), wird beim nächsten Spielstart wieder geladen.
+
+Daten an Cloud: Screenshots, Spielcode und Lernstand gehen an MiniMax (über Pi). Alles andere bleibt lokal.
+
+## Befehle
+
+```bash
+python3 tutor.py install     # Autostart einrichten (einmalig)
+python3 tutor.py status
+python3 tutor.py pause       # bleibt pausiert, bis resume
+python3 tutor.py resume
+python3 tutor.py now         # jetzt erklären
+python3 tutor.py still       # aktuelle Sprache sofort beenden
+python3 tutor.py uninstall   # Autostart komplett aus
+```
+
+Einstellbar per Umgebung (`TUTOR_INTERVAL`, `TUTOR_THINK_PAUSE`, `TUTOR_MODEL`, …) – siehe Kopf von `tutor.py`.
+
+## macOS-Berechtigung
+
+Bildschirmaufnahme für den LaunchAgent-Python (`/usr/bin/python3` → Xcode-Python) erlauben,
+sonst läuft der Tutor ohne Bild und sagt das auch.
