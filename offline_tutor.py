@@ -38,14 +38,28 @@ def context_from_observation(observation):
     voice = re.search(r"DER LERNENDE SAGT \(gesprochen\): [„“\"](.+?)[“”\"]", observation)
     answer = re.search(r"ANTWORT DES LERNENDEN: ([^\n]+)", observation)
     reason = observation.split("\n", 1)[0]
+    error = re.search(r"FEHLER BEIM AUSFÜHREN[^\n]*\n([^\n]+)", observation)
     return {"file": filename, "code": code[:7000],
             "goal": goal.group(1).strip() if goal else "",
             "user": (voice.group(1) if voice else answer.group(1) if answer else ""),
-            "reason": reason}
+            "reason": reason, "error": error.group(1)[:600] if error else ""}
 
 
 def simple_hint(ctx):
     """Offline baseline: one real concept and one question, no invented game state."""
+    error = ctx.get("error", "").lower()
+    if error:
+        if "bevor ihr ein wert" in error or "unboundlocal" in error or "before assignment" in error:
+            return ("Diese Fehlermeldung betrifft den Geltungsbereich einer Variablen. "
+                    "Innerhalb der Funktion wird sie als lokal behandelt, aber vor dem Lesen "
+                    "noch nicht mit einem Wert belegt. Wo wird der Wert in deiner Funktion zuerst gesetzt?")
+        if "nonetype" in error or "none" in error:
+            return ("Eine Funktion ohne Rückgabewert liefert None. "
+                    "Prüfe, welcher Pfad deiner Funktion ohne einen Wert endet. "
+                    "Was wird genau in diesem Fall zurückgegeben?")
+        return ("Der Laufzeitfehler ist ein konkreter Hinweis auf den ersten fehlschlagenden Schritt. "
+                "Lies die genannte Zeile und überprüfe die Werte direkt davor. "
+                "Welche Annahme dieser Zeile könnte falsch sein?")
     c = ctx["code"].lower()
     u = ctx["user"].lower()
     if "checklist" in c or ("koordinate" in u and "liste" in u):
@@ -95,6 +109,7 @@ def local_model_reply(ctx, model, url, timeout):
         f"Datei: {ctx['file'] or 'nicht erkannt'}\n"
         f"Code:\n{ctx['code']}\n"
         f"Frage: {ctx['user'] or '(keine)'}\n"
+        f"Laufzeitfehler: {ctx.get('error') or '(keiner)'}\n"
     )
     payload = json.dumps({"model": model, "prompt": prompt, "stream": False,
                           "options": {"num_predict": 135, "temperature": 0.2}}).encode("utf-8")
