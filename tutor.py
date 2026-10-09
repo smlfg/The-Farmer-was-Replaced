@@ -165,7 +165,12 @@ class Pi:
 
 
 # ---------- Sprache ----------
+_voice = None  # Popen der laufenden Sprachausgabe in diesem Prozess
+
+
 def speaking():
+    if _voice is not None:
+        return _voice.poll() is None
     try:
         os.kill(int(F_SAYPID.read_text()), 0)
         return True
@@ -182,13 +187,19 @@ def hush():
 
 
 def say(text):
+    global _voice
     hush()
-    tts = Path.home() / ".local/bin/pycoach-speak"  # Piper Thorsten high, lokal
-    if tts.exists():
-        p = subprocess.Popen([str(tts)], stdin=subprocess.PIPE, start_new_session=True)
+    model = Path.home() / ".local/share/pycoach-tts/de_DE-thorsten-high.onnx"  # Standard-Stimme (vorlese)
+    piper = Path.home() / ".local/bin/piper"
+    if piper.exists() and model.exists():  # direkt, ohne Mesh-Ohr-Lock (flock fehlt auf macOS)
+        wav = STATE / "speech.wav"
+        sh = '"$0" -m "$1" -c "$1.json" -f "$2" >/dev/null 2>&1 && exec afplay "$2"'
+        p = subprocess.Popen(["/bin/sh", "-c", sh, str(piper), str(model), str(wav)],
+                             stdin=subprocess.PIPE, start_new_session=True)
         p.stdin.write(text.encode()); p.stdin.close()
     else:
         p = subprocess.Popen(["say", "-v", CFG["voice"], "-r", str(CFG["rate"]), text], start_new_session=True)
+    _voice = p
     F_SAYPID.write_text(str(p.pid))
 
 
