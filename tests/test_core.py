@@ -128,6 +128,18 @@ class ObservationTest(unittest.TestCase):
         self.assertIn("angehängt", out)
 
 
+class ShouldSpeakTest(unittest.TestCase):
+    def test_nicht_veraltet_wird_gesprochen_und_zahler_zuruckgesetzt(self):
+        self.assertEqual(tutor.should_speak(False, 0), (True, 0))
+        self.assertEqual(tutor.should_speak(False, 1), (True, 0))
+
+    def test_erste_veraltete_antwort_verworfen(self):
+        self.assertEqual(tutor.should_speak(True, 0), (False, 1))
+
+    def test_zweite_veraltete_antwort_trotzdem_gesprochen(self):
+        self.assertEqual(tutor.should_speak(True, 1), (True, 0))
+
+
 class GamePidTest(unittest.TestCase):
     def _fake_run(self, pgrep_out, ps_map):
         def run(cmd, *args, **kwargs):

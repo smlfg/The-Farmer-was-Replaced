@@ -15,7 +15,7 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     think_pause=20,       # s Denkpause nach jeder Erklärung
     continue_after=90,    # s Stille, nach denen der Tutor von sich aus fortsetzt
     max_continues=2,      # höchstens so oft ohne neue Änderung fortsetzen
-    analysis_timeout=120,
+    analysis_timeout=180,
     model="minimax/MiniMax-M3", thinking="low", voice="Anna", rate=175,
 )
 for k, v in list(CFG.items()):
@@ -151,7 +151,7 @@ def screenshot():
     try:
         if subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(raw)], capture_output=True).returncode:
             return None
-        subprocess.run(["sips", "-Z", "1400", str(raw), "--out", str(png)], capture_output=True)
+        subprocess.run(["sips", "-Z", "1000", str(raw), "--out", str(png)], capture_output=True)
     except OSError as e:  # screencapture/sips fehlt
         log("screencapture/sips fehlt – kein Screenshot: %s" % e)
         return None
@@ -303,6 +303,19 @@ def shorten(text, limit=85):
     return " ".join(out + ([question] if question else []))
 
 
+def should_speak(stale, stale_drops):
+    """Entscheidet, ob eine fertige Antwort gesprochen wird.
+
+    Rückgabe: (sprechen, neuer_zähler). Eine veraltete Antwort wird nur einmal
+    verworfen; ist der Zähler schon 1, wird sie trotzdem gesprochen, damit der
+    Tutor bei ständigem Tippen nicht verstummt."""
+    if not stale:
+        return True, 0
+    if stale_drops == 0:
+        return False, 1
+    return True, 0
+
+
 def save_progress(notes):
     """Hängt Lernstand-Zeilen an. Exakte Duplikate werden ignoriert; „gezeigt“ ersetzt
     ein vorhandenes „behandelt“ desselben Konzepts, aber nie umgekehrt."""
@@ -372,6 +385,7 @@ def session(gpid):
     pending_since = None
     continues = 0
     asked_hash = None
+    stale_drops = 0
     forced = False
     answer_text = None
     fails = 0
@@ -406,9 +420,13 @@ def session(gpid):
                 continue
             h = hashlib.md5(json.dumps([st["code"], st["unlocks"], manual_unlocks()], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
             if ans is not None:
-                if h != asked_hash and not forced_last:
+                stale = h != asked_hash and not forced_last
+                speak, stale_drops = should_speak(stale, stale_drops)
+                if not speak:
                     log("veraltet verworfen – Stand hat sich geändert")
                 else:
+                    if stale:
+                        log("leicht veraltet, trotzdem gesprochen")
                     text, notes = parse(ans)
                     save_progress(notes)
                     if text:
