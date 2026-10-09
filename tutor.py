@@ -16,8 +16,9 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
-    gap_festgefahren=45, gap_normal=60, gap_zuegig=90,  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
-    prefetch=0.5,         # nächste Analyse startet nach diesem Anteil der Lücke (Antwort liegt zum Takt bereit)
+    gap_festgefahren=45, gap_normal=55, gap_zuegig=90,  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
+    prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
+    max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
     ptt_key=61,           # Sprechtaste (Keycode): 61 = rechte Wahltaste (⌥) – halten zum Sprechen
     ptt_hold=0.25,        # s halten, bevor die Aufnahme startet (⌥+Taste für Sonderzeichen bleibt frei)
     mic=":0",             # ffmpeg-avfoundation-Eingang (":0" = MacBook-Mikrofon)
@@ -774,7 +775,7 @@ def session(gpid):
             h = hashlib.md5(json.dumps([st["code"], st["unlocks"], manual_unlocks()], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
             if ans is not None:
                 stale = h != asked_hash and not forced_last
-                speak, stale_drops = should_speak(stale, stale_drops, now - max(last_start, last_spoke))
+                speak, stale_drops = should_speak(stale, stale_drops, now - max(last_start, last_spoke), CFG["max_silence"])
                 if not speak:
                     log("veraltet verworfen – Stand hat sich geändert")
                 else:
@@ -815,9 +816,9 @@ def session(gpid):
                 continue
             if not pi.ready():
                 continue
-            if speaking():
+            talking = speaking()
+            if talking:
                 last_spoke = now
-                continue
             # Anlass bestimmen
             reason = None
             if voice_text is not None:
@@ -830,12 +831,14 @@ def session(gpid):
                 continue  # erst die vorhandenen Teile sprechen
             elif paused:
                 continue
-            elif h != sent_hash:
+            elif talking and not (now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) * CFG["prefetch"]):
+                continue  # während er spricht nur vorausrechnen, sonst warten
+            elif h != sent_hash and not talking:
                 pending_since = pending_since or now
                 if now - pending_since >= CFG["debounce"] and now - last_spoke >= CFG["think_pause"]:
                     reason = "Code/Spielstand geändert"
             elif now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) * CFG["prefetch"] \
-                    and now - last_spoke >= CFG["continue_after"] and continues < CFG["max_continues"]:
+                    and (talking or now - last_spoke >= CFG["continue_after"]) and continues < CFG["max_continues"]:
                 reason = "weiter (Coach-Impuls fällig: nicht SKIP, nichts wiederholen)"
                 continues += 1
             if not reason:
