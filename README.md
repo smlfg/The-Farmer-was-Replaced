@@ -81,7 +81,11 @@ Spiel läuft ─► tutor.py (Wächter, lokal)
 - **Lehransätze** ([prompts/ansaetze.md](prompts/ansaetze.md)): 9 Bausteine (Ablauf, Analogie, Zerlegung,
   Beispiel, Vorhersage, Vergleich, Rückwärts, Fading, Erklären lassen), adaptiv gewählt; gemerkt im
   Tutor-Notizbuch `~/.tfwr-tutor/notizbuch.json` (Ziel, letzter Ansatz, Reaktion, offene Frage).
-- **Lernstand** ([progress.md](progress.md)): pro Konzept *erklärt* → *mit Hilfe* → *selbstständig*, steigt nur auf.
+- **Konzeptkarte** ([konzepte.md](konzepte.md)): 24 feste Python-Konzepte, je *offen*, *mit Hilfe* oder *kann ich*,
+  mit Beleg. Du darfst die Stufe selbst ändern, dein Eintrag gilt. Der Coach stuft nur hoch und erklärt
+  „kann ich“-Konzepte nicht mehr. Alter Freitext-Lernstand: [Archiv](docs/lernstand-archiv-2026-10-09.md).
+- **Übungsserie** ([uebung.json](uebung.json)): Jede Minute, in der du Code änderst, zählt. Ab 25 Minuten
+  pro Tag zählt der Tag zur Serie; der Coach nennt sie in seiner Vorstellung.
 - **Unterbrechung**: Der Tutor merkt sich, was er gesagt hat und wo du unterbrochen hast, und bezieht Rückfragen darauf.
 
 **Daten in die Cloud:** Screenshots, Spielcode und Lernstand gehen über Pi an MiniMax (`minimax/MiniMax-M3`).

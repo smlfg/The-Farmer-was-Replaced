@@ -50,18 +50,6 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(notes, ["behandelt: x"])
 
 
-class SaveProgressTest(unittest.TestCase):
-    def test_keine_duplikate(self):
-        with tempfile.TemporaryDirectory() as d:
-            progress = Path(d) / "progress.md"
-            with mock.patch.object(tutor, "PROGRESS", progress):
-                tutor.save_progress(["behandelt: A", "behandelt: A"])
-                tutor.save_progress(["behandelt: A", "gezeigt: B"])
-                text = progress.read_text()
-            self.assertEqual(text.count("behandelt: A"), 1)
-            self.assertEqual(text.count("gezeigt: B"), 1)
-
-
 class DocsForTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

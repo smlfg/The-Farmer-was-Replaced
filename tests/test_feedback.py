@@ -18,12 +18,10 @@ class FeedbackTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.state = Path(self.tmp.name)
         self._state = tutor.STATE
-        self._progress = tutor.PROGRESS
         tutor.STATE = self.state
 
     def tearDown(self):
         tutor.STATE = self._state
-        tutor.PROGRESS = self._progress
         self.tmp.cleanup()
 
     # 1) antwort schreibt nach STATE/answer_in.txt
@@ -53,38 +51,6 @@ class FeedbackTest(unittest.TestCase):
         st = dict(save="s1", code={"main.py": "move(North)"}, unlocks=["move"], items={"Hay": 3})
         text = tutor.observation("Test", st, None, None, True)
         self.assertIn("vom Lernenden gemeldet, nicht belegt: trees", text)
-
-    # 4) save_progress: Duplikate ignorieren, gezeigt ersetzt behandelt
-    def test_save_progress_exact_duplicate_ignored(self):
-        tutor.PROGRESS = self.state / "progress.md"
-        tutor.save_progress(["behandelt: while-True mit if"])
-        tutor.save_progress(["behandelt: while-True mit if"])
-        body = tutor.PROGRESS.read_text()
-        self.assertEqual(body.count("behandelt: while-True mit if"), 1)
-
-    def test_save_progress_gezeigt_replaces_behandelt(self):
-        tutor.PROGRESS = self.state / "progress.md"
-        tutor.save_progress(["behandelt: Koordinaten"])
-        tutor.save_progress(["gezeigt: Koordinaten"])
-        body = tutor.PROGRESS.read_text()
-        self.assertIn("gezeigt: Koordinaten", body)
-        self.assertNotIn("behandelt: Koordinaten", body)
-        self.assertEqual(body.count("Koordinaten"), 1)
-
-    def test_save_progress_gezeigt_not_downgraded(self):
-        tutor.PROGRESS = self.state / "progress.md"
-        tutor.save_progress(["gezeigt: Funktionen"])
-        tutor.save_progress(["behandelt: Funktionen"])
-        body = tutor.PROGRESS.read_text()
-        self.assertIn("gezeigt: Funktionen", body)
-        self.assertNotIn("behandelt: Funktionen", body)
-
-    def test_save_progress_keeps_header_and_appends(self):
-        tutor.PROGRESS = self.state / "progress.md"
-        tutor.save_progress(["behandelt: Schleifen"])
-        body = tutor.PROGRESS.read_text()
-        self.assertTrue(body.startswith("# Lernstand"))
-        self.assertIn("behandelt: Schleifen", body)
 
 
 class ParseTest(unittest.TestCase):

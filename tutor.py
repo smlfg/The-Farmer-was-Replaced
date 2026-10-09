@@ -4,6 +4,7 @@
 Befehle: run | status | pause | resume | now | antwort | unlocked | still | install | uninstall | log
 Der LaunchAgent startet `run`. Ohne Spiel: nur pgrep alle paar Sekunden, keine Modellaufrufe.
 """
+import konzepte
 import base64, fcntl, hashlib, json, os, plistlib, re, signal, subprocess, sys, threading, time, queue
 from pathlib import Path
 from offline_tutor import LocalPi
@@ -48,8 +49,7 @@ GAME_BIN_MARK = "TheFarmerWasReplaced.app/Contents/MacOS/TheFarmerWasReplaced"
 GAME_DATA = Path.home() / "Library/Application Support/com.TheFarmerWasReplaced.TheFarmerWasReplaced"
 DOCS = Path.home() / ("Library/Application Support/Steam/steamapps/common/The Farmer Was Replaced/"
                       "TheFarmerWasReplaced.app/Contents/Resources/Data/StreamingAssets/Languages/DE/docs")
-PROGRESS = HERE / "progress.md"
-OUTPUT = GAME_DATA / "output.txt"
+OUTPUT = GAME_DATA / "output.txt"   # Ausgabe des Spiels beim Ausführen: print und Fehlermeldungen
 INTRO = ("Ich bin dein Coach für The Farmer Was Replaced. Ich melde mich nur, wenn du mich fragst: "
          "rechte Wahltaste halten und sprechen. Und wenn dein Code beim Ausführen einen Fehler wirft.")
 
@@ -238,7 +238,7 @@ class Pi:
         ans_md = HERE / "prompts" / "ansaetze.md"
         if ans_md.exists():
             sp += "\n\n" + ans_md.read_text()
-        sp += "\n\n# Gespeicherter Lernstand (aus früheren Sitzungen)\n" + (PROGRESS.read_text() if PROGRESS.exists() else "(leer)")
+        sp += "\n\n# Konzeptkarte (Stand beim Start)\n" + konzepte.summary()
         spoken = STATE / "spoken.txt"
         if spoken.exists():
             sp += "\n\n# Zuletzt gesprochen (frühere Sitzungen)\n" + "\n".join(spoken.read_text().splitlines()[-6:])
@@ -587,39 +587,7 @@ def should_speak(stale, stale_drops, silent_for=0.0, max_silence=60.0):
     return True, 0
 
 
-STATUS_RANK = {"erklärt": 0, "behandelt": 0, "mit Hilfe": 1, "selbstständig": 2, "gezeigt": 2}
-STATUS_RE = r"(erklärt|behandelt|mit Hilfe|selbstständig|gezeigt)"
-
-
-def save_progress(notes):
-    """Lernstand pro Konzept: erklärt -> mit Hilfe -> selbstständig. Nur aufsteigen, nie absteigen;
-    exakte Duplikate ignorieren. Alte Einträge (behandelt/gezeigt) gelten als erklärt/selbstständig."""
-    old = PROGRESS.read_text() if PROGRESS.exists() else "# Lernstand\n\n"
-    lines = old.splitlines()
-    index = {}
-    for i, line in enumerate(lines):
-        m = re.match(r"^\s*-\s*%s:\s*(.+?)\s*(?:\((\d{4}-\d{2}-\d{2})\))?\s*$" % STATUS_RE, line)
-        if m:
-            index[m.group(2).strip()] = (i, m.group(1))
-    today = time.strftime("%Y-%m-%d")
-    changed = False
-    for n in notes:
-        m = re.match(r"^\s*%s:\s*(.+?)\s*$" % STATUS_RE, n)
-        if not m:
-            continue
-        status, concept = m.group(1), m.group(2).strip()
-        if concept in index:
-            i, cur = index[concept]
-            if STATUS_RANK[status] > STATUS_RANK[cur]:
-                lines[i] = "- %s: %s  (%s)" % (status, concept, today)
-                index[concept] = (i, status)
-                changed = True
-        else:
-            lines.append("- %s: %s  (%s)" % (status, concept, today))
-            index[concept] = (len(lines) - 1, status)
-            changed = True
-    if changed:
-        PROGRESS.write_text("\n".join(lines) + "\n")
+STATUS_RE = r"(offen|mit Hilfe|kann ich|erklärt|behandelt|selbstständig|gezeigt)"
 
 
 def answer_path():
@@ -850,7 +818,7 @@ def session(gpid):
     out_mtime, out_text = read_output()
     err_hash = hashlib.md5(out_text.encode()).hexdigest()
     error_now = None
-    say(INTRO); log("Vorstellung gesprochen")
+    say(INTRO + " " + konzepte.intro_line()); log("Vorstellung gesprochen")
     last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
@@ -958,6 +926,8 @@ def session(gpid):
                 continue
             code_now = "\n".join(st["code"].values())
             if code_now != last_code:
+                if last_code is not None:
+                    konzepte.record_activity()
                 history = [(t, c) for t, c in history if now - t <= 600] + [(now, code_now)]
                 last_code = code_now
             h = hashlib.md5(json.dumps([st["code"], st["unlocks"], manual_unlocks()], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
@@ -977,7 +947,8 @@ def session(gpid):
                             new_parts = []
                         else:
                             syntax_said.append(now); new_parts = new_parts[:1]
-                    save_progress(notes)
+                    for cid, lvl in konzepte.apply_notes(notes):
+                        log("Konzeptkarte: %s -> %s" % (cid, lvl))
                     nb = parse_notebook(ans)
                     if nb:
                         notebook.update(nb); save_notebook(notebook)
@@ -1059,6 +1030,7 @@ def session(gpid):
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
                      notebook_line(notebook),
+                     konzepte.summary(),
                      "Letzte Spielausgabe (output.txt, beim Ausführen): %s" % (out_text.strip()[-600:] or "(leer)"),
                      "Syntax-Budget: noch %d Syntax-Hinweis(e) in dieser Stunde. Syntax nur, wenn er sonst nicht weiterkommt; "
                      "mehrere Syntaxfehler in EINEM Satz zusammenfassen." % max(0, CFG["syntax_per_hour"] - len([t for t in syntax_said if now - t < 3600]))]

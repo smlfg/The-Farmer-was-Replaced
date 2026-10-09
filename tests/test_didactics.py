@@ -10,30 +10,7 @@ os.environ["TUTOR_STATE"] = tempfile.mkdtemp()  # nie ins echte ~/.tfwr-tutor sc
 import tutor  # noqa: E402
 
 
-class ProgressTiersTest(unittest.TestCase):
-    def setUp(self):
-        self.f = Path(tempfile.mkdtemp()) / "progress.md"
-        self.p = mock.patch.object(tutor, "PROGRESS", self.f)
-        self.p.start()
-
-    def tearDown(self):
-        self.p.stop()
-
-    def test_only_upgrades(self):
-        tutor.save_progress(["erklärt: Schleife"])
-        tutor.save_progress(["mit Hilfe: Schleife"])
-        tutor.save_progress(["erklärt: Schleife"])  # kein Abstieg
-        text = self.f.read_text()
-        self.assertIn("- mit Hilfe: Schleife", text)
-        self.assertNotIn("erklärt: Schleife", text)
-        tutor.save_progress(["selbstständig: Schleife"])
-        self.assertIn("- selbstständig: Schleife", self.f.read_text())
-
-    def test_legacy_entries_understood(self):
-        self.f.write_text("# Lernstand\n\n- gezeigt: if  (2026-10-09)\n")
-        tutor.save_progress(["mit Hilfe: if"])  # gezeigt == selbstständig, nicht absteigen
-        self.assertIn("- gezeigt: if", self.f.read_text())
-
+class ParseTiersTest(unittest.TestCase):
     def test_parse_parts_reads_new_tiers_and_diagnosis(self):
         ans = ("DIAGNOSE: Algorithmus | Beobachtung: nur move | Vermutung: Ablauf fehlt\nHILFE: 2\n"
                "LOGIK: Erst eine Spalte.\nMODUS: normal\nLERNSTAND:\n- mit Hilfe: Spalte zuerst")
