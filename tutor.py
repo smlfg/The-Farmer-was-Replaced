@@ -196,6 +196,10 @@ class Pi:
         self.events = queue.Queue()
         threading.Thread(target=self._reader, daemon=True).start()
         self.busy = False
+        self.started = False     # agent_start für die aktuelle Anfrage gesehen
+        self.settling = False    # nach abort: warten, bis der abgebrochene Lauf wirklich endet
+        self.settle_t = 0.0
+        self.req = 0
         log("Pi gestartet (Sitzung %s, Modell %s)" % (sid, CFG["model"]))
 
     def _reader(self):
@@ -210,8 +214,13 @@ class Pi:
         self.proc.stdin.write((json.dumps(cmd) + "\n").encode())
         self.proc.stdin.flush()
 
+    def ready(self):
+        return not self.busy and (not self.settling or time.time() - self.settle_t > 8)
+
     def ask(self, text, png):
-        msg = {"type": "prompt", "id": "obs", "message": text}
+        self.req += 1
+        self.started = False
+        msg = {"type": "prompt", "id": "obs-%d" % self.req, "message": text}
         if png:
             msg["images"] = [{"type": "image", "data": base64.b64encode(png).decode(), "mimeType": "image/png"}]
         self.send(msg)
@@ -227,9 +236,15 @@ class Pi:
             if t == "response" and e.get("command") == "prompt" and not e.get("success"):
                 self.busy = False
                 log("Pi lehnt ab: %s" % e.get("error"))
-            if t == "agent_settled" and self.busy:
-                self.busy = False
-                self.send({"type": "get_last_assistant_text", "id": "last"})
+            if t == "agent_start" and self.busy:
+                self.started = True
+            if t == "agent_settled":
+                if self.settling:          # Ende des abgebrochenen Laufs – nicht unsere Antwort
+                    self.settling = False
+                    continue
+                if self.busy and self.started:
+                    self.busy = False
+                    self.send({"type": "get_last_assistant_text", "id": "last"})
             if t == "response" and e.get("id") == "last":
                 return (e.get("data") or {}).get("text") or ""
         return None
@@ -238,6 +253,8 @@ class Pi:
         if self.busy:
             self.send({"type": "abort"})
             self.busy = False
+            self.settling = self.started   # nur ein gestarteter Lauf meldet noch ein Ende
+            self.settle_t = time.time()
 
     def close(self):
         try:
@@ -354,7 +371,7 @@ def parse_parts(answer):
     Neues Format: CODE:/LOGIK:/MODELL: (je ein Teil, im Minutentakt). Alt: SPRECHEN: (ein Teil)."""
     if not answer or answer.strip().startswith("SKIP"):
         return [], [], "normal", None
-    keys = LEVELS + ("SPRECHEN", "MODUS", "STEUERUNG", "LERNSTAND")
+    keys = LEVELS + ("SPRECHEN", "MODUS", "STEUERUNG", "LERNSTAND", "DIAGNOSE", "HILFE")
     blocks, cur = {}, None
     for line in answer.splitlines():
         m = re.match(r"^\s*(%s)\s*:\s*(.*)$" % "|".join(keys), line)
@@ -371,8 +388,29 @@ def parse_parts(answer):
     if modus not in ("festgefahren", "normal", "zügig"):
         modus = "normal"
     ctl = (blocks.get("STEUERUNG", "").strip().split() or [""])[0].lower()
-    notes = re.findall(r"^\s*-?\s*((?:behandelt|gezeigt): .+)$", blocks.get("LERNSTAND", ""), re.M)
+    notes = re.findall(r"^\s*-?\s*(%s: .+)$" % STATUS_RE, blocks.get("LERNSTAND", ""), re.M)
+    notes = [n[0] if isinstance(n, tuple) else n for n in notes]
+    diag = " ".join(blocks.get("DIAGNOSE", "").split())
+    if diag:
+        log("Diagnose: %s | Hilfe %s" % (diag[:160], blocks.get("HILFE", "?").strip()[:3]))
     return parts, notes, modus, (ctl if ctl in CONTROL else None)
+
+
+APPROACHES = (  # Erklärwege, rotiert: Abwechslung statt immer derselben Erklärform
+    "Alltagssprache: den Ablauf erst ohne Code als Handlungsanweisung beschreiben",
+    "Positionen: die Drohne Schritt für Schritt mit (x, y) verfolgen",
+    "Zustandstabelle: Schritt, Position, Aktion vorlesen (Schritt 1: x 0, y 0, ernten …)",
+    "Pseudocode: deutsche Stichwort-Zeilen, dann Abgleich mit seinem Spielcode",
+    "kleineres Beispiel: dieselbe Idee auf 2 mal 2 Feldern oder nur einer Spalte",
+    "Vorhersage: er sagt voraus, was als Nächstes passiert, du löst danach auf",
+    "Debugging: Erwartung gegen tatsächlichen Ablauf, erster abweichender Schritt",
+    "Bild/Analogie aus dem Alltag (z. B. Rasenmähen in Bahnen, Lesen einer Buchseite)",
+    "Selbst formulieren: er beschreibt einen Schritt in eigenen Worten, du fragst gezielt nach",
+)
+
+
+def approach_for(n):
+    return APPROACHES[n % len(APPROACHES)]
 
 
 def gap_for(modus):
@@ -420,31 +458,36 @@ def should_speak(stale, stale_drops):
     return True, 0
 
 
+STATUS_RANK = {"erklärt": 0, "behandelt": 0, "mit Hilfe": 1, "selbstständig": 2, "gezeigt": 2}
+STATUS_RE = r"(erklärt|behandelt|mit Hilfe|selbstständig|gezeigt)"
+
+
 def save_progress(notes):
-    """Hängt Lernstand-Zeilen an. Exakte Duplikate werden ignoriert; „gezeigt“ ersetzt
-    ein vorhandenes „behandelt“ desselben Konzepts, aber nie umgekehrt."""
+    """Lernstand pro Konzept: erklärt -> mit Hilfe -> selbstständig. Nur aufsteigen, nie absteigen;
+    exakte Duplikate ignorieren. Alte Einträge (behandelt/gezeigt) gelten als erklärt/selbstständig."""
     old = PROGRESS.read_text() if PROGRESS.exists() else "# Lernstand\n\n"
     lines = old.splitlines()
     index = {}
     for i, line in enumerate(lines):
-        m = re.match(r"^\s*-\s*(behandelt|gezeigt):\s*(.+?)\s*(?:\((\d{4}-\d{2}-\d{2})\))?\s*$", line)
+        m = re.match(r"^\s*-\s*%s:\s*(.+?)\s*(?:\((\d{4}-\d{2}-\d{2})\))?\s*$" % STATUS_RE, line)
         if m:
-            index[m.group(2).strip()] = i
+            index[m.group(2).strip()] = (i, m.group(1))
     today = time.strftime("%Y-%m-%d")
     changed = False
     for n in notes:
-        m = re.match(r"^\s*(behandelt|gezeigt):\s*(.+?)\s*$", n)
+        m = re.match(r"^\s*%s:\s*(.+?)\s*$" % STATUS_RE, n)
         if not m:
             continue
         status, concept = m.group(1), m.group(2).strip()
         if concept in index:
-            i = index[concept]
-            if status == "gezeigt" and lines[i].lstrip().startswith("- behandelt:"):
-                lines[i] = "- gezeigt: %s  (%s)" % (concept, today)
+            i, cur = index[concept]
+            if STATUS_RANK[status] > STATUS_RANK[cur]:
+                lines[i] = "- %s: %s  (%s)" % (status, concept, today)
+                index[concept] = (i, status)
                 changed = True
         else:
             lines.append("- %s: %s  (%s)" % (status, concept, today))
-            index[concept] = len(lines) - 1
+            index[concept] = (len(lines) - 1, status)
             changed = True
     if changed:
         PROGRESS.write_text("\n".join(lines) + "\n")
@@ -639,6 +682,7 @@ def session(gpid):
     voice_text = None
     voice_pending = False        # Antwort auf Spracheingabe steht aus -> nichts anderes spricht
     parts, modus = [], "normal"
+    approach_n = int(time.time()) % len(APPROACHES)  # Startpunkt der Rotation variiert je Sitzung
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
@@ -739,6 +783,8 @@ def session(gpid):
                 if now - ask_t > CFG["analysis_timeout"]:
                     log("Analyse-Timeout"); pi.abort(); voice_pending = False
                 continue
+            if not pi.ready():
+                continue
             if speaking():
                 last_spoke = now
                 continue
@@ -770,7 +816,9 @@ def session(gpid):
             last_shot = now
             extra = [said_context(now),
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
-                     "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part()]
+                     "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
+                     "Vorgeschlagener Erklärweg diesmal: %s." % approach_for(approach_n)]
+            approach_n += 1
             pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
             urgent = forced or answer_text is not None or voice_text is not None
