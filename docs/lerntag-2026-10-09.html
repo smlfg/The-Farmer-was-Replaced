@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lerntag 9. Oktober</title>
+<meta name="description" content="Landkarte eines Lerntags mit The Farmer Was Replaced: Code, eigenes Denken und Wirkung des Coaches.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: eine vertikale Zeitachse wie ein Feldweg, Stationen als Parzellen, Coach-Wirkung als Markierung am Rand */
+:root{
+  --bg:#f6f7f2; --surface:#ffffff; --fg:#20251c; --muted:#5d6655; --line:#cfd6c4;
+  --accent:#6b4f1d;
+  --ok:#2f6b3a; --ok-bg:#e3f0e2; --mix:#8a5a00; --mix-bg:#fbefd6; --bad:#9b2f22; --bad-bg:#f8e2de; --off:#5d6655; --off-bg:#eceee6;
+  --display:"Fraunces",Georgia,serif; --body:"Source Sans 3",system-ui,-apple-system,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161a13; --surface:#1f251b; --fg:#e7eadf; --muted:#a3ac97; --line:#39422f; --accent:#d9b56e;
+  --ok:#8fd19a; --ok-bg:#1f3a23; --mix:#f0c36a; --mix-bg:#3a2e12; --bad:#f2a092; --bad-bg:#432019; --off:#a3ac97; --off-bg:#2a3124; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#161a13; --surface:#1f251b; --fg:#e7eadf; --muted:#a3ac97; --line:#39422f; --accent:#d9b56e;
+  --ok:#8fd19a; --ok-bg:#1f3a23; --mix:#f0c36a; --mix-bg:#3a2e12; --bad:#f2a092; --bad-bg:#432019; --off:#a3ac97; --off-bg:#2a3124; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);padding-inline:16px;padding-block:32px}
+main{max-width:760px;margin:0 auto;display:grid;gap:28px}
+h1{font:500 clamp(28px,5vw,40px)/1.15 var(--display);margin:0;text-wrap:balance}
+.lede{color:var(--muted);margin:6px 0 0;max-width:62ch}
+.legend{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+.chip{display:inline-block;font-size:12px;letter-spacing:.02em;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.ok{background:var(--ok-bg);color:var(--ok)} .mix{background:var(--mix-bg);color:var(--mix)}
+.bad{background:var(--bad-bg);color:var(--bad)} .off{background:var(--off-bg);color:var(--off)}
+ol.path{list-style:none;margin:0;padding:0 0 0 22px;border-left:2px dashed var(--line);display:grid;gap:16px}
+.st{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.st::before{content:"";position:absolute;left:-31px;top:20px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+.hd{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.time{font:400 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;min-width:9ch}
+.name{font:500 18px/1.3 var(--display);flex:1 1 220px}
+dl{margin:10px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:15px}
+dt{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+dd{margin:0;min-width:0}
+code{font:13px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}
+q{font-style:italic}
+.note{border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:14px}
+@media (max-width:480px){dl{grid-template-columns:1fr} dt{padding-top:6px}}
+</style>
+
+<main>
+  <header>
+    <h1>Lerntag 9. Oktober</h1>
+    <p class="lede">Ein Tag mit <i>The Farmer Was Replaced</i>: Was im Code passierte, was im Kopf entstand, und ob der Coach dabei half. Grundlage: Spielstand-Zwischenstände, Coach-Log, gesprochene Fragen und eine Plaud-Denknotiz.</p>
+  </header>
+
+  <div class="legend" aria-label="Legende Coach-Wirkung">
+    <span>Coach-Wirkung:</span>
+    <span class="chip ok">hilfreich</span><span class="chip mix">gemischt</span><span class="chip bad">schädlich / Fehler</span><span class="chip off">stumm</span>
+  </div>
+
+  <ol class="path">
+    <li class="st">
+      <div class="hd"><span class="time">11:30–12:30</span><span class="name">Start: 3×3 mit starren Bewegungen</span><span class="chip bad">schädlich</span></div>
+      <dl>
+        <dt>Code</dt><dd><code>while True</code>, <code>move(East)</code>, <code>if can_harvest()</code> mit Ernte und Bewegung durcheinander</dd>
+        <dt>Coach</dt><dd>zu lang, zu früh „verschachtelte Schleifen“ und Verweis auf die Musterlösung in der Doku, „oben links“ ohne Bildbeleg</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">12:46–13:30</span><span class="name">Bäume in Abständen: Wo steht die Drohne?</span><span class="chip mix">gemischt</span></div>
+      <dl>
+        <dt>Gesagt</dt><dd><q>Ich muss bestimmen, wo die Drohne ist und auf diesen Feldern Bäume pflanzen.</q></dd>
+        <dt>Code</dt><dd><code>BaumKarotten.py</code>, <code>f0.py</code>: <code>get_pos_x()</code>, <code>% 2</code>, erste eigene Funktion <code>def do()</code></dd>
+        <dt>Coach</dt><dd>erste Sprachfrage ging verloren (Fehler); später hilfreich: Zuweisung gegen Vergleich, Klammern beim Aufruf</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">13:20–14:20</span><span class="name">Neues Ziel: Kürbis</span><span class="chip bad">schädlich</span></div>
+      <dl>
+        <dt>Gesagt</dt><dd><q>Ich will jetzt Kürbis bauen.</q> · <q>Ich hab einen toten Kürbis.</q> · Karotten werden für Kürbisse gebraucht</dd>
+        <dt>Coach</dt><dd>antwortete erst mit einem Nebenthema, sagte „wir bleiben bei einer Frucht“, las Code vor und diktierte um 14:17 ein ganzes Programm</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">14:20–14:58</span><span class="name">BigKürbis: Reihe prüfen, Rückgabewert</span><span class="chip ok">hilfreich</span></div>
+      <dl>
+        <dt>Gesagt</dt><dd><q>Wie bekomme ich es hin, dass ich eine Reihe überprüfe nach toten Kürbissen, und wenn der Check erfolgreich war, weitergehe?</q></dd>
+        <dt>Code</dt><dd><code>check(max)</code> mit Parameter, <code>return move(East)</code> (die Idee von return war noch unklar)</dd>
+        <dt>Coach</dt><dd>„return ist wie ein Brief an den Aufrufer“, ein Check pro Spalte. Um 14:50 lief ein Feld voller Mega-Kürbisse.</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">14:58–19:56</span><span class="name">Allein: der eigene Plan entsteht</span><span class="chip off">stumm</span></div>
+      <dl>
+        <dt>Notizen</dt><dd><code>Full.py</code> in Worten: Mega-Kürbis braucht Reihen ohne tote Kürbisse, „vielleicht quadratisch wachsen“ von 1×1 über 2×2 zu 3×3</dd>
+        <dt>Denknotiz 19:40</dt><dd><q>Ich verstehe nicht, was eine Runde ist.</q> Dann selbst entwickelt: eine Säen-Runde, eine Kontrollrunde, tote Kürbisse als Koordinaten in einer Liste merken und nur dorthin zurücklaufen</dd>
+        <dt>Coach</dt><dd>hing fünf Stunden in einer Aufnahme fest (Fehler). Zwischendurch Hilfe von Claude Code; den Algorithmus hast du selbst erarbeitet.</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">19:56–20:15</span><span class="name">2×2: Funktionen mit True/False, Zähler</span><span class="chip mix">gemischt</span></div>
+      <dl>
+        <dt>Code</dt><dd><code>zweizwei.py</code>, <code>Logik.py</code>: <code>field_ok()</code>, <code>saeen()</code>, <code>counter</code></dd>
+        <dt>Coach</dt><dd>richtiger Befund: prüft immer nur ein Feld und zählt Runden statt Felder. Danach ein Diktat verworfen, um 20:15 pausierte er sich selbst.</dd>
+      </dl>
+    </li>
+    <li class="st">
+      <div class="hd"><span class="time">20:19–20:34</span><span class="name">Die Denknotiz wird Code</span><span class="chip off">stumm</span></div>
+      <dl>
+        <dt>Code</dt><dd><code>eswirdbesser.py</code>: <code>checklist</code> mit (x, y), mit <code>while</code> zum Ziel fahren, <code>fieldok()</code> und <code>fielddo()</code></dd>
+        <dt>Offen</dt><dd>Liste innerhalb der Funktion neu zugewiesen, x und y vertauscht, nur das erste Ziel angefahren, Richtung South mit falschem Vergleich, <code>Full +=</code> mit einem Rückgabewert None</dd>
+      </dl>
+    </li>
+  </ol>
+
+  <p class="note">Ergebnis des Tages: 22 Code-Dateien, über 216.000 Kürbisse im Inventar, ein selbst entwickelter Algorithmus mit Säen-Runde, Kontrollrunde und Fehlerliste. Die stärksten Schritte entstanden in Worten (<code>Full.py</code>, Denknotiz) und wurden danach zu Code.</p>
+</main>

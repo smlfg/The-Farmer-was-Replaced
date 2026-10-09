@@ -92,6 +92,10 @@ Alles per Umgebungsvariable `TUTOR_<NAME>` (im LaunchAgent unter `EnvironmentVar
 `tutor.py`: `INTERVAL`, `GAP_NORMAL`, `PREFETCH`, `PTT_KEY`, `PTT_HOLD`, `MIC`, `MODEL`, `WHISPER_MODEL` …
 Zustand und Logs: `~/.tfwr-tutor/` (`tutor.log`, `spoken.txt`, `notizbuch.json`, `sessions/`).
 
+## Rückblicke
+
+- [Lerntag 9. Oktober](docs/lerntag-2026-10-09.html): Landkarte aus Code-Zwischenständen, Coach-Log und Denknotiz.
+
 ## Tests
 
 ```bash
