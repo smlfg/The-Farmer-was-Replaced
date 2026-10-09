@@ -16,7 +16,7 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
-    gap_festgefahren=30, gap_normal=40, gap_zuegig=70,  # s zwischen Teilen; wer festhängt, bekommt mehr Begleitung
+    gap_festgefahren=30, gap_normal=40, gap_zuegig=50,  # s zwischen Teilen; wer festhängt, bekommt mehr Begleitung
     prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
     max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
     image_every=3,        # Screenshot bei jeder n-ten Analyse (immer bei Sprachfrage/„now“) – Bilder bleiben im Kontext
@@ -761,6 +761,7 @@ def session(gpid):
     parts, modus = [], "normal"
     asked_prefetch = False
     shots_n = 0
+    filler_said = False
     notebook = load_notebook()  # überlebt Spielneustarts
     say(greeting(notebook))      # sofort da sein, bevor die erste (langsame) Analyse fertig ist
     last_start = last_spoke = time.time()
@@ -791,6 +792,7 @@ def session(gpid):
                 else:
                     voice_text = val
                     say(ack_phrase())  # sofort hörbar: Frage ist angekommen, nicht hilflos warten
+                    log("quittiert: Frage angekommen")
                 log("Sprachbefehl: %s" % (intent or "Frage an Tutor"))
             if ptt.active:  # Aufnahme/Transkription läuft: niemand sonst spricht oder analysiert
                 if pi.busy and not voice_pending:
@@ -806,6 +808,7 @@ def session(gpid):
                 answer_path().unlink(missing_ok=True)
                 if txt:
                     hush(); pi.abort(); parts = []; answer_text = txt
+                    say(ack_phrase()); log("quittiert: Antwort angekommen")
             if voice_text is not None and not voice_pending:
                 hush(); pi.abort(); parts = []
             paused = F_PAUSED.exists()
@@ -868,6 +871,8 @@ def session(gpid):
             if pi.req >= CFG["renew_after"] and pi.ready() and not voice_pending and not parts:
                 log("frischer Pi-Kontext nach %d Analysen" % pi.req)
                 pi.close(); pi = Pi(); prev = None
+            if pi.busy and forced_last and not filler_said and now - ask_t > 20 and not speaking():
+                say("Ich bin gleich so weit."); filler_said = True; log("Zwischenmeldung beim Warten")
             if pi.busy:
                 if now - ask_t > CFG["analysis_timeout"]:
                     log("Analyse-Timeout"); pi.abort(); voice_pending = False
@@ -917,6 +922,7 @@ def session(gpid):
             asked_prefetch = reason.startswith("weiter")
             voice_pending = voice_text is not None
             ask_t, asked_hash, forced_last = now, h, urgent
+            filler_said = False
             prev, sent_hash, pending_since, forced, answer_text, voice_text = st, h, None, False, None, None
     finally:
         ptt.close()   # Mikrofon frei, Sprechtaste aus
