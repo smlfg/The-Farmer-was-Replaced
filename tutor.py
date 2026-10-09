@@ -37,8 +37,12 @@ F_PAUSED, F_NOW, F_STILL, F_SAYPID = (STATE / n for n in ("paused", "now", "stil
 def log(msg):
     line = time.strftime("%H:%M:%S ") + msg
     print(line, flush=True)
-    with open(STATE / "tutor.log", "a") as f:
-        f.write(line + "\n")
+    try:  # Loggen darf nie den Aufrufer zum Absturz bringen
+        STATE.mkdir(parents=True, exist_ok=True)
+        with open(STATE / "tutor.log", "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
 
 
 # ---------- Beobachtung (ohne Modell) ----------
@@ -52,8 +56,25 @@ def game_pid():
 
 
 def current_save():
-    saves = [p for p in (GAME_DATA / "Saves").iterdir() if (p / "save.json").exists()]
-    return max(saves, key=lambda p: max(f.stat().st_mtime for f in p.iterdir())) if saves else None
+    """Neuester Spielstand, oder None wenn Saves fehlt/leer/kein save.json."""
+    saves_dir = GAME_DATA / "Saves"
+    try:
+        entries = list(saves_dir.iterdir())
+    except OSError as e:  # Verzeichnis fehlt oder ist nicht lesbar
+        log("Saves-Verzeichnis nicht lesbar (%s): %s" % (saves_dir, e))
+        return None
+    saves = [p for p in entries if (p / "save.json").exists()]
+    if not saves:
+        return None
+
+    def mtime(p):
+        try:
+            return max((f.stat().st_mtime for f in p.iterdir()), default=0.0)
+        except OSError as e:
+            log("Spielstand nicht lesbar (%s): %s" % (p, e))
+            return 0.0
+
+    return max(saves, key=mtime)
 
 
 def read_state():
@@ -61,10 +82,38 @@ def read_state():
     s = current_save()
     if not s:
         return None
-    code = {f.name: f.read_text(errors="replace") for f in sorted(s.glob("*.py")) if f.name != "__builtins__.py"}
-    d = json.loads((s / "save.json").read_text())
-    items = {i["name"]: i["nr"] for i in d.get("items", {}).get("serializeList", [])}
-    return dict(save=s.name, code=code, unlocks=d.get("unlocks", []), items=items)
+    code = {}
+    for f in sorted(s.glob("*.py")):
+        if f.name == "__builtins__.py":
+            continue
+        try:
+            code[f.name] = f.read_text(errors="replace")
+        except OSError as e:  # einzelne Datei überspringen, Rest weiterlesen
+            log("Code-Datei nicht lesbar (%s): %s" % (f, e))
+    try:
+        raw = (s / "save.json").read_text()
+    except OSError as e:
+        log("save.json nicht lesbar (%s): %s" % (s / "save.json", e))
+        return None
+    try:
+        d = json.loads(raw)
+    except ValueError as e:
+        log("save.json ungültig (%s): %s" % (s / "save.json", e))
+        return None
+    items, unlocks = {}, []
+    if isinstance(d, dict):
+        items_raw = d.get("items")
+        serialize = items_raw.get("serializeList", []) if isinstance(items_raw, dict) else []
+        for i in serialize:
+            try:
+                items[i["name"]] = i["nr"]
+            except (KeyError, TypeError):
+                continue
+        if isinstance(d.get("unlocks"), list):
+            unlocks = d["unlocks"]
+    else:
+        log("save.json unerwartete Struktur (%s): keine Objektwurzel" % (s / "save.json"))
+    return dict(save=s.name, code=code, unlocks=unlocks, items=items)
 
 
 def docs_for(unlocks):
@@ -81,15 +130,34 @@ def screenshot():
     """PNG-Bytes nur vom Spielfenster, sonst None (nie ein fremdes Fenster)."""
     helper = STATE / "winid"
     if not helper.exists():
-        subprocess.run(["swiftc", "-O", str(HERE / "winid.swift"), "-o", str(helper)], capture_output=True)
-    wid = subprocess.run([str(helper)], capture_output=True, text=True).stdout.strip()
+        try:
+            r = subprocess.run(["swiftc", "-O", str(HERE / "winid.swift"), "-o", str(helper)], capture_output=True)
+            if r.returncode:
+                log("winid-Helfer konnte nicht gebaut werden – kein Screenshot")
+                return None
+        except OSError as e:  # swiftc fehlt (keine Xcode-Tools)
+            log("swiftc fehlt – kein Screenshot: %s" % e)
+            return None
+    try:
+        wid = subprocess.run([str(helper)], capture_output=True, text=True).stdout.strip()
+    except OSError as e:
+        log("winid-Helfer nicht ausführbar – kein Screenshot: %s" % e)
+        return None
     if not wid:
         return None
     raw, png = STATE / "raw.png", STATE / "shot.png"
-    if subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(raw)], capture_output=True).returncode:
+    try:
+        if subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(raw)], capture_output=True).returncode:
+            return None
+        subprocess.run(["sips", "-Z", "1400", str(raw), "--out", str(png)], capture_output=True)
+    except OSError as e:  # screencapture/sips fehlt
+        log("screencapture/sips fehlt – kein Screenshot: %s" % e)
         return None
-    subprocess.run(["sips", "-Z", "1400", str(raw), "--out", str(png)], capture_output=True)
-    return png.read_bytes() if png.exists() else None
+    try:
+        return png.read_bytes() if png.exists() else None
+    except OSError as e:
+        log("Screenshot nicht lesbar (%s): %s" % (png, e))
+        return None
 
 
 # ---------- Pi im RPC-Modus ----------
