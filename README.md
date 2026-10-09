@@ -35,9 +35,16 @@ python3 tutor.py status
 python3 tutor.py pause       # bleibt pausiert, bis resume
 python3 tutor.py resume
 python3 tutor.py now         # jetzt erklären
+python3 tutor.py antwort "weil die Drohne nach Norden fährt"   # Antwort auf die Vorhersagefrage
+python3 tutor.py unlocked "trees"                              # Freischaltung selbst melden
 python3 tutor.py still       # aktuelle Sprache sofort beenden
 python3 tutor.py uninstall   # Autostart komplett aus
 ```
+
+`antwort` legt den Text in `STATE/answer_in.txt` ab. Die laufende Sitzung bemerkt das, stoppt die
+Sprache und schickt die Antwort als Anlass `ANTWORT DES LERNENDEN: …` an Pi – wie `now`, aber mit
+Bewertung richtig/teilweise/falsch. `unlocked` hängt eine Freischaltung an `STATE/manual_unlocks.txt`
+an; die nächste Beobachtung nennt sie als „vom Lernenden gemeldet, nicht belegt“ (kein Fakt).
 
 Einstellbar per Umgebung (`TUTOR_INTERVAL`, `TUTOR_THINK_PAUSE`, `TUTOR_MODEL`, …) – siehe Kopf von `tutor.py`.
 
