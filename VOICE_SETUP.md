@@ -27,3 +27,20 @@ Das Aufnahme-Helperprogramm legt Ereignisse in `~/.tfwr-tutor/ptt-events.jsonl` 
 - Den tatsächlich gesprochenen Anteil zur laufenden Erklärung speichern, statt abgeschnittene Texte als vollständig gesprochen zu markieren
 
 **Bis zum erfolgreichen Integrationstest nicht als fertig bezeichnen.**
+
+## Verknüpfung mit tutor.py (Feature-Branch)
+
+`tutor.py` liest nun die PTT-Ereignisse automatisch während einer Spielsitzung, unterbricht die TTS und reicht das offline transkribierte Ergebnis als `ANTWORT DES LERNENDEN` an **dieselbe Pi-Sitzung** weiter.
+
+**Wichtig:** Der Hotkey-Listener muss zurzeit separat ausgeführt werden; `install` richtet ihn nicht ein. `main` bleibt unverändert. Nicht als produktionsreif ansehen.
+
+### Manueller End-to-End-Test
+
+1. `mkdir -p ~/.tfwr-tutor` und beide Swift-Binaries wie oben bauen (bitte Buildfehler melden).
+2. Im ersten Terminal `~/.tfwr-tutor/ptt` starten; Systemberechtigungen prüfen.
+3. Im zweiten Terminal `python3 tutor.py run` ausführen und das Spiel öffnen.
+4. Während der Tutor spricht die rechte Option-Taste halten, eigene Frage sprechen und loslassen.
+5. `python3 tutor.py log` beobachten: Down/Up → Transkript → Pi → TTS. Danach Frage zum aktuellen Code prüfen.
+6. Unverständliche/leere Aufnahme, Vollbild, Spielende und Wiederstart testen.
+
+Bekannte Grenzen: Es gibt bislang keine automatische Einrichtung des PTT-Listeners als LaunchAgent, keine abgesicherte Signierung/Berechtigungsführung und keine tatsächliche Erfassung des bereits gesprochenen Wortanteils. Der Kontext enthält stattdessen den vollständigen *unterbrochenen* Sprechtext als möglicherweise nur teilweise gehört.
