@@ -72,9 +72,29 @@ class PiCorrelationTest(unittest.TestCase):
         self.assertEqual(pi.poll(), "SPRECHEN: hallo")
         self.assertFalse(pi.busy)
 
-    def test_approaches_rotate(self):
-        self.assertNotEqual(tutor.approach_for(0), tutor.approach_for(1))
-        self.assertEqual(tutor.approach_for(0), tutor.approach_for(len(tutor.APPROACHES)))
+    def test_building_blocks_present(self):
+        text = (tutor.HERE / "prompts" / "ansaetze.md").read_text()
+        for k in ("ABLAUF", "MODELL_ANALOGIE", "ZERLEGUNG", "BEISPIEL", "VORHERSAGE", "VERGLEICH",
+                  "RUECKWAERTS", "FADING", "ERKLAEREN_LASSEN"):
+            self.assertIn("## " + k, text)
+
+
+class NotebookTest(unittest.TestCase):
+    def test_parse_and_not_spoken(self):
+        ans = ("ZIEL: eine Spalte ernten\nANSATZ: ZERLEGUNG\nREAKTION: hängt an move North\n"
+               "OFFENE_FRAGE: keine\nLOGIK: Erst eine Spalte.\nMODUS: normal")
+        nb = tutor.parse_notebook(ans)
+        self.assertEqual(nb["ansatz"], "ZERLEGUNG")
+        self.assertEqual(nb["ziel"], "eine Spalte ernten")
+        parts = tutor.parse_parts(ans)[0]
+        self.assertEqual(parts, ["Erst eine Spalte."])  # Notizbuch wird nie vorgelesen
+
+    def test_save_load_roundtrip(self):
+        d = Path(tempfile.mkdtemp())
+        with mock.patch.object(tutor, "STATE", d):
+            tutor.save_notebook({"ziel": "x", "ansatz": "VERGLEICH"})
+            self.assertEqual(tutor.load_notebook()["ansatz"], "VERGLEICH")
+            self.assertIn("VERGLEICH", tutor.notebook_line(tutor.load_notebook()))
 
 
 if __name__ == "__main__":

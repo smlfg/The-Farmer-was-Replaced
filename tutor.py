@@ -182,6 +182,9 @@ def screenshot():
 class Pi:
     def __init__(self):
         sp = (HERE / "prompt.md").read_text()
+        ans_md = HERE / "prompts" / "ansaetze.md"
+        if ans_md.exists():
+            sp += "\n\n" + ans_md.read_text()
         sp += "\n\n# Gespeicherter Lernstand (aus früheren Sitzungen)\n" + (PROGRESS.read_text() if PROGRESS.exists() else "(leer)")
         spoken = STATE / "spoken.txt"
         if spoken.exists():
@@ -373,7 +376,7 @@ def parse_parts(answer):
     Neues Format: CODE:/LOGIK:/MODELL: (je ein Teil, im Minutentakt). Alt: SPRECHEN: (ein Teil)."""
     if not answer or answer.strip().startswith("SKIP"):
         return [], [], "normal", None
-    keys = LEVELS + ("SPRECHEN", "MODUS", "STEUERUNG", "LERNSTAND", "DIAGNOSE", "HILFE")
+    keys = LEVELS + ("SPRECHEN", "MODUS", "STEUERUNG", "LERNSTAND", "DIAGNOSE", "HILFE") + tuple(k for k, _ in NOTEBOOK_KEYS)
     blocks, cur = {}, None
     for line in answer.splitlines():
         m = re.match(r"^\s*(%s)\s*:\s*(.*)$" % "|".join(keys), line)
@@ -398,21 +401,42 @@ def parse_parts(answer):
     return parts, notes, modus, (ctl if ctl in CONTROL else None)
 
 
-APPROACHES = (  # Erklärwege, rotiert: Abwechslung statt immer derselben Erklärform
-    "Alltagssprache: den Ablauf erst ohne Code als Handlungsanweisung beschreiben",
-    "Positionen: die Drohne Schritt für Schritt mit (x, y) verfolgen",
-    "Zustandstabelle: Schritt, Position, Aktion vorlesen (Schritt 1: x 0, y 0, ernten …)",
-    "Pseudocode: deutsche Stichwort-Zeilen, dann Abgleich mit seinem Spielcode",
-    "kleineres Beispiel: dieselbe Idee auf 2 mal 2 Feldern oder nur einer Spalte",
-    "Vorhersage: er sagt voraus, was als Nächstes passiert, du löst danach auf",
-    "Debugging: Erwartung gegen tatsächlichen Ablauf, erster abweichender Schritt",
-    "Bild/Analogie aus dem Alltag (z. B. Rasenmähen in Bahnen, Lesen einer Buchseite)",
-    "Selbst formulieren: er beschreibt einen Schritt in eigenen Worten, du fragst gezielt nach",
-)
+NOTEBOOK_KEYS = (("ZIEL", "ziel"), ("ANSATZ", "ansatz"), ("REAKTION", "reaktion"), ("OFFENE_FRAGE", "offene_frage"))
 
 
-def approach_for(n):
-    return APPROACHES[n % len(APPROACHES)]
+def notebook_path():
+    return STATE / "notizbuch.json"
+
+
+def load_notebook():
+    try:
+        return json.loads(notebook_path().read_text())
+    except Exception:
+        return {}
+
+
+def save_notebook(d):
+    try:
+        notebook_path().write_text(json.dumps(d, ensure_ascii=False, indent=1))
+    except OSError:
+        pass
+
+
+def parse_notebook(answer):
+    """ZIEL/ANSATZ/REAKTION/OFFENE_FRAGE aus der Modellantwort (nur nicht-leere Werte)."""
+    out = {}
+    for key, field in NOTEBOOK_KEYS:
+        m = re.search(r"^\s*%s\s*:\s*(.+)$" % key, answer or "", re.M)
+        if m and m.group(1).strip():
+            out[field] = " ".join(m.group(1).split())[:200]
+    return out
+
+
+def notebook_line(d):
+    if not d:
+        return "Tutor-Notizbuch (vorläufig): noch leer"
+    return "Tutor-Notizbuch (vorläufig): Ziel: %s; zuletzt Ansatz: %s; beobachtete Reaktion: %s; offene Frage: %s" % (
+        d.get("ziel", "?"), d.get("ansatz", "?"), d.get("reaktion", "?"), d.get("offene_frage", "keine"))
 
 
 def gap_for(modus):
@@ -684,7 +708,7 @@ def session(gpid):
     voice_text = None
     voice_pending = False        # Antwort auf Spracheingabe steht aus -> nichts anderes spricht
     parts, modus = [], "normal"
-    approach_n = int(time.time()) % len(APPROACHES)  # Startpunkt der Rotation variiert je Sitzung
+    notebook = load_notebook()  # überlebt Spielneustarts
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
@@ -758,6 +782,10 @@ def session(gpid):
                         log("leicht veraltet, trotzdem gesprochen")
                     new_parts, notes, modus, ctl = parse_parts(ans)
                     save_progress(notes)
+                    nb = parse_notebook(ans)
+                    if nb:
+                        notebook.update(nb); save_notebook(notebook)
+                        log("Ansatz: %s | Reaktion: %s" % (nb.get("ansatz", "?"), nb.get("reaktion", "?")[:80]))
                     if ctl == "pause":
                         F_PAUSED.touch()
                     elif ctl == "weiter":
@@ -819,8 +847,7 @@ def session(gpid):
             extra = [said_context(now),
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
-                     "Vorgeschlagener Erklärweg diesmal: %s." % approach_for(approach_n)]
-            approach_n += 1
+                     notebook_line(notebook)]
             pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
             urgent = forced or answer_text is not None or voice_text is not None
