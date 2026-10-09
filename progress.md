@@ -121,3 +121,4 @@
 - erklärt: No-Op-Verhalten von till() auf bereits umgegrabenem Boden als Antwort auf Verständnisfrage  (2026-10-09)
 - erklärt: No-Op-Verhalten von till() auf bereits umgegrabenem Boden  (2026-10-09)
 - erklärt: Trace Pfad Start (0,0) über move(East) und move(North) bis zur ersten Ernte an (1,1) als Zustandstabelle vorgeführt bekommen  (2026-10-09)
+- behandelt: variable shadowing in main.py wieder aufgetreten - i in beiden for-Schleifen, Umbenennung der inneren Variable angeregt  (2026-10-09)  (2026-10-09)
