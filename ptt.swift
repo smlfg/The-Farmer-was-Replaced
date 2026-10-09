@@ -3,6 +3,7 @@
 import Cocoa
 import ApplicationServices
 import AVFoundation
+import Speech
 import Foundation
 
 let state = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".tfwr-tutor")
@@ -10,6 +11,10 @@ try? FileManager.default.createDirectory(at: state, withIntermediateDirectories:
 let events = state.appendingPathComponent("ptt-events.jsonl")
 let recording = state.appendingPathComponent("ptt-recording.wav")
 let audio = AVAudioEngine()
+// Permission prompts require signed app attribution on target macOS.
+let _ = SFSpeechRecognizer.requestAuthorization { status in
+    if status != .authorized { emit("error", "Spracherkennung nicht freigegeben") }
+}
 var file: AVAudioFile?
 var down = false
 var active = false
