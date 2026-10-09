@@ -12,7 +12,7 @@ let events = state.appendingPathComponent("ptt-events.jsonl")
 let recording = state.appendingPathComponent("ptt-recording.wav")
 let audio = AVAudioEngine()
 // Permission prompts require signed app attribution on target macOS.
-let _ = SFSpeechRecognizer.requestAuthorization { status in
+SFSpeechRecognizer.requestAuthorization { status in
     if status != .authorized { emit("error", "Spracherkennung nicht freigegeben") }
 }
 var file: AVAudioFile?
