@@ -16,9 +16,11 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
-    gap_festgefahren=30, gap_normal=40, gap_zuegig=70,  # wer festhängt, bekommt mehr Begleitung  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
+    gap_festgefahren=30, gap_normal=40, gap_zuegig=70,  # s zwischen Teilen; wer festhängt, bekommt mehr Begleitung
     prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
     max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
+    image_every=3,        # Screenshot bei jeder n-ten Analyse (immer bei Sprachfrage/„now“) – Bilder bleiben im Kontext
+    renew_after=20,       # nach so vielen Analysen frischer Pi-Kontext (Notizbuch/Lernstand bleiben)
     ptt_key=61,           # Sprechtaste (Keycode): 61 = rechte Wahltaste (⌥) – halten zum Sprechen
     ptt_hold=0.25,        # s halten, bevor die Aufnahme startet (⌥+Taste für Sonderzeichen bleibt frei)
     mic=":0",             # ffmpeg-avfoundation-Eingang (":0" = MacBook-Mikrofon)
@@ -133,13 +135,27 @@ def read_state():
     return dict(save=s.name, code=code, unlocks=unlocks, items=items)
 
 
-def docs_for(unlocks):
-    out = []
+def docs_for(unlocks, code="", limit=8000):
+    """Doku nur zu belegten Freischaltungen, begrenzt (sonst wächst der Kontext und Pi wird langsam).
+    Vorrang: Themen, die im Code vorkommen, dann die neuesten Freischaltungen."""
     names = list(unlocks) + (["expand_1"] if "move" in unlocks else [])
-    for u in names:
+    low = (code or "").lower()
+    hints = {"senses": ("get_pos", "get_entity", "get_ground"), "operators": ("==", "!=", " and ", " or ", "%"),
+             "functions": ("def ",), "lists": ("[",), "variables": (" = ",)}
+    used = [u for u in names if u.replace("_", "") in low.replace("_", "")
+            or any(h in low for h in hints.get(u, ()))]
+    order = used + [u for u in reversed(names) if u not in used]
+    out, size, skipped = [], 0, []
+    for u in order:
         for f in (DOCS / "unlocks" / (u + ".md"), DOCS / "scripting" / (u + ".md")):
             if f.exists():
-                out.append("### Doku %s\n%s" % (f.relative_to(DOCS), f.read_text()))
+                txt = "### Doku %s\n%s" % (f.relative_to(DOCS), f.read_text())
+                if size + len(txt) > limit:
+                    skipped.append(u)
+                    continue
+                out.append(txt); size += len(txt)
+    if skipped:
+        out.append("(Weitere freigeschaltete Themen ohne Doku-Auszug: %s)" % ", ".join(sorted(set(skipped))))
     return "\n\n".join(out)
 
 
@@ -558,7 +574,7 @@ def observation(reason, st, prev, png, first, extra=None):
         parts.append("unlocks: " + ", ".join(st["unlocks"]))
         if prev and new:
             parts.append("NEU freigeschaltet: " + ", ".join(new))
-        parts.append("# In-Game-Doku\n" + docs_for(new if (prev and new) else st["unlocks"]))
+        parts.append("# In-Game-Doku\n" + docs_for(new if (prev and new) else st["unlocks"], "\n".join(st["code"].values())))
     man = manual_unlocks()
     if man:
         parts.append("vom Lernenden gemeldet, nicht belegt: " + ", ".join(man))
@@ -725,6 +741,7 @@ def session(gpid):
     voice_pending = False        # Antwort auf Spracheingabe steht aus -> nichts anderes spricht
     parts, modus = [], "normal"
     asked_prefetch = False
+    shots_n = 0
     notebook = load_notebook()  # überlebt Spielneustarts
     say(greeting(notebook))      # sofort da sein, bevor die erste (langsame) Analyse fertig ist
     last_start = last_spoke = time.time()
@@ -829,6 +846,9 @@ def session(gpid):
                 say(text)
                 last_start = last_spoke = time.time()
                 continue
+            if pi.req >= CFG["renew_after"] and pi.ready() and not voice_pending and not parts:
+                log("frischer Pi-Kontext nach %d Analysen" % pi.req)
+                pi.close(); pi = Pi(); prev = None
             if pi.busy:
                 if now - ask_t > CFG["analysis_timeout"]:
                     log("Analyse-Timeout"); pi.abort(); voice_pending = False
@@ -864,7 +884,9 @@ def session(gpid):
                 continue
             if not reason.startswith("weiter"):
                 continues = 0
-            png = screenshot()
+            urgent_now = forced or answer_text is not None or voice_text is not None
+            shots_n += 1
+            png = screenshot() if (urgent_now or shots_n % CFG["image_every"] == 1 or CFG["image_every"] <= 1) else None
             last_shot = now
             extra = [said_context(now),
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
