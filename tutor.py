@@ -12,9 +12,9 @@ STATE = Path(os.environ.get("TUTOR_STATE", Path.home() / ".tfwr-tutor"))
 CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     interval=25,          # s zwischen visuellen Beobachtungen
     debounce=4,           # s Ruhe nach Codeänderung, bevor analysiert wird (bündelt schnelles Speichern)
-    think_pause=20,       # s Denkpause nach jeder Erklärung
-    continue_after=90,    # s Stille, nach denen der Tutor von sich aus fortsetzt
-    max_continues=2,      # höchstens so oft ohne neue Änderung fortsetzen
+    think_pause=8,        # s Denkpause nach jeder Erklärung
+    continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
+    max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
     model="minimax/MiniMax-M3", thinking="low", voice="Anna", rate=175,
 )
@@ -457,10 +457,11 @@ def session(gpid):
                     reason = "Code/Spielstand geändert"
             elif now - last_shot >= CFG["interval"] and now - last_spoke >= CFG["continue_after"] \
                     and continues < CFG["max_continues"]:
-                reason = "weiter"; continues += 1
+                reason = "weiter (Coach-Impuls fällig: genau EINE kurze Aussage, 20–50 Wörter, nicht SKIP, nichts wiederholen)"
+                continues += 1
             if not reason:
                 continue
-            if reason != "weiter":
+            if not reason.startswith("weiter"):
                 continues = 0
             png = screenshot()
             last_shot = now
