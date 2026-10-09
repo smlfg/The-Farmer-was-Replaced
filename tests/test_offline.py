@@ -99,7 +99,7 @@ if __name__ == "__main__":
 class RuntimeErrorHintTest(unittest.TestCase):
     def test_scope_error_receives_specific_hint(self):
         obs = OBS.replace("Code/Spielstand geändert",
-                          "FEHLER BEIM AUSFÜHREN (Spielausgabe output.txt):\\nError: Variable checklist gelesen, bevor ihr ein Wert zugewiesen wurde.")
+                          "FEHLER BEIM AUSFÜHREN (Spielausgabe output.txt):\nError: Variable checklist gelesen, bevor ihr ein Wert zugewiesen wurde.")
         ctx = context_from_observation(obs)
         self.assertIn("bevor ihr ein Wert", ctx["error"])
         self.assertIn("Geltungsbereich", simple_hint(ctx))
