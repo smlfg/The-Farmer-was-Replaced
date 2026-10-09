@@ -8,6 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import os as _os, tempfile as _tf
+_os.environ["TUTOR_STATE"] = _tf.mkdtemp()  # nie ins echte ~/.tfwr-tutor schreiben
 import tutor
 
 

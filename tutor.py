@@ -16,7 +16,7 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
-    gap_festgefahren=45, gap_normal=55, gap_zuegig=90,  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
+    gap_festgefahren=30, gap_normal=40, gap_zuegig=70,  # wer festhängt, bekommt mehr Begleitung  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
     prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
     max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
     ptt_key=61,           # Sprechtaste (Keycode): 61 = rechte Wahltaste (⌥) – halten zum Sprechen
@@ -433,6 +433,21 @@ def parse_notebook(answer):
     return out
 
 
+ACKS = ("Okay, ich schau mir das an.", "Gute Frage, Moment.", "Alles klar, ich schau auf deinen Code.",
+        "Verstanden, ich denk kurz mit.")
+
+
+def ack_phrase():
+    return ACKS[int(time.time()) % len(ACKS)]
+
+
+def greeting(d):
+    ziel = (d or {}).get("ziel")
+    if ziel:
+        return "Ich bin da. Zuletzt ging es um: %s. Ich schau mir gleich deinen Code an." % ziel
+    return "Ich bin da. Ich schau mir gleich deinen Code an."
+
+
 def notebook_line(d):
     if not d:
         return "Tutor-Notizbuch (vorläufig): noch leer"
@@ -710,6 +725,8 @@ def session(gpid):
     voice_pending = False        # Antwort auf Spracheingabe steht aus -> nichts anderes spricht
     parts, modus = [], "normal"
     notebook = load_notebook()  # überlebt Spielneustarts
+    say(greeting(notebook))      # sofort da sein, bevor die erste (langsame) Analyse fertig ist
+    last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
@@ -736,6 +753,7 @@ def session(gpid):
                     say("Okay, ab jetzt kleinere Häppchen." if intent == "langsamer" else "Okay, ab jetzt mehr auf einmal.")
                 else:
                     voice_text = val
+                    say(ack_phrase())  # sofort hörbar: Frage ist angekommen, nicht hilflos warten
                 log("Sprachbefehl: %s" % (intent or "Frage an Tutor"))
             if ptt.active:  # Aufnahme/Transkription läuft: niemand sonst spricht oder analysiert
                 if pi.busy and not voice_pending:

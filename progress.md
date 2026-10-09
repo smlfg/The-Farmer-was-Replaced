@@ -130,3 +130,6 @@
 - erklärt: Kürbis-Gruppierungs-Mechanik (Reihe/Spalte gleich groß)  (2026-10-09)
 - selbstständig: Shadowing-Fix in main.py umgesetzt (j innen, i außen)  (2026-10-09)
 - erklärt: Kürbis-Mechanik erlebt durch eigenen toten Kürbis - Konsequenz der Streu-Strategie verstanden  (2026-10-09)
+- erklärt: while-True mit if-Bedingung; Trennung Aktion vs. Bewegung; 2D-Traversierung mit zwei for-Schleifen; Modulo + and für Schachbrettmuster  (2026-10-09)
+- selbstständig: Schachbrettmuster mit `x % 2 == 0 and y % 2 == 0` umgesetzt; Shadowing-Fix in main.py (j innen, i außen)  (2026-10-09)
+- mit Hilfe: Verbindung Positionsbedingung mit innerem for-Block; Umbenennung i in j bei Shadowing  (2026-10-09)

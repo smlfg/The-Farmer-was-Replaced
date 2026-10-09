@@ -8,6 +8,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import os as _os, tempfile as _tf
+_os.environ["TUTOR_STATE"] = _tf.mkdtemp()  # nie ins echte ~/.tfwr-tutor schreiben
 import tutor  # noqa: E402
 
 

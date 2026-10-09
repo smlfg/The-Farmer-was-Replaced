@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import os as _os, tempfile as _tf
+_os.environ["TUTOR_STATE"] = _tf.mkdtemp()  # nie ins echte ~/.tfwr-tutor schreiben
 import tutor  # noqa: E402
 
 
