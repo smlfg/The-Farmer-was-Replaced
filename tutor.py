@@ -284,7 +284,23 @@ def parse(answer):
     text = re.sub(r"[`*_#>\[\]]", "", text)
     text = re.sub(r"[\U0001F300-\U0001FAFF☀-➿]", "", text).strip()
     notes = re.findall(r"^\s*-?\s*((?:behandelt|gezeigt): .+)$", answer.split("LERNSTAND:", 1)[-1] if "LERNSTAND:" in answer else "", re.M)
-    return (text or None), notes
+    return (shorten(text) or None), notes
+
+
+def shorten(text, limit=85):
+    """Modelle halten die Wortgrenze nicht zuverlässig ein: ganze Sätze bis zur Grenze behalten,
+    die Schlussfrage (Vorhersagefrage) immer mitnehmen."""
+    if len(text.split()) <= limit:
+        return text
+    sents = re.split(r"(?<=[.!?])\s+", text)
+    question = sents[-1] if sents[-1].endswith("?") else ""
+    body = sents[:-1] if question else sents
+    out, n = [], len(question.split())
+    for s_ in body:
+        if out and n + len(s_.split()) > limit:
+            break
+        out.append(s_); n += len(s_.split())
+    return " ".join(out + ([question] if question else []))
 
 
 def save_progress(notes):
@@ -460,18 +476,43 @@ def run():
         hush()
 
 
+APP = Path.home() / "Applications/TFWR Tutor.app"
+APP_EXE = APP / "Contents/MacOS/tfwr-tutor"
+
+
+def build_app():
+    """Starter-App mit eigener Identität für die Bildschirmaufnahme-Freigabe. Nur bauen, wenn sie fehlt:
+    jeder Neubau ändert die Signatur, und macOS vergisst dann die Freigabe."""
+    if APP_EXE.exists():
+        return
+    APP_EXE.parent.mkdir(parents=True, exist_ok=True)
+    plistlib.dump(dict(CFBundleIdentifier=LABEL, CFBundleName="TFWR Tutor", CFBundleExecutable="tfwr-tutor",
+                       CFBundlePackageType="APPL", CFBundleVersion="1", LSUIElement=True),
+                  (APP / "Contents/Info.plist").open("wb"))
+    subprocess.run(["swiftc", "-O", str(HERE / "launcher.swift"), "-o", str(APP_EXE)], check=True)
+    subprocess.run(["codesign", "--force", "-s", "-", "--identifier", LABEL, str(APP)], check=True)
+    print("Starter-App gebaut:", APP)
+
+
 def install():
+    build_app()
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     env = {"PATH": "%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" % Path.home()}
-    plistlib.dump(dict(Label=LABEL, ProgramArguments=["/usr/bin/python3", str(HERE / "tutor.py"), "run"],
+    plistlib.dump(dict(Label=LABEL, ProgramArguments=[str(APP_EXE), str(HERE / "tutor.py")],
                        RunAtLoad=True, KeepAlive=dict(SuccessfulExit=False), ThrottleInterval=60,
                        EnvironmentVariables=env, ProcessType="Interactive",
                        StandardOutPath=str(STATE / "launchd.log"), StandardErrorPath=str(STATE / "launchd.log")),
                   PLIST.open("wb"))
     uid = os.getuid()
     subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (uid, LABEL)], capture_output=True)
-    subprocess.run(["launchctl", "bootstrap", "gui/%d" % uid, str(PLIST)], check=True)
+    for _ in range(10):  # bootout ist asynchron; bootstrap direkt danach scheitert sonst mit Fehler 5
+        if subprocess.run(["launchctl", "bootstrap", "gui/%d" % uid, str(PLIST)], capture_output=True).returncode == 0:
+            break
+        time.sleep(1)
+    else:
+        sys.exit("launchctl bootstrap fehlgeschlagen")
     print("Autostart aktiv:", PLIST)
+    print("Bildschirmaufnahme einmalig erlauben für:", APP)
 
 
 def uninstall():
