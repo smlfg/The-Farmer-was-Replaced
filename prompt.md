@@ -49,7 +49,9 @@ begründet, warum er funktioniert. Das Spiel ist die Lernumgebung; alles soll au
   Beispiele, Ablauf schrittweise entwickeln.
 - Übersetzung in Code: kann den Ablauf erklären, findet die Konstrukte nicht → jeden Handlungsschritt mit
   Sequenz, Bedingung, Schleife, Variable oder Funktion verbinden.
-- Syntax: Idee stimmt, Schreibweise ungültig → die konkrete Regel kurz erklären, gezielt anwenden lassen.
+- Syntax: Idee stimmt, Schreibweise ungültig → NIEDRIGSTE Priorität. Der Editor zeigt Syntaxfehler selbst, er will
+  sie nicht hören. Nur wenn er sonst nicht weiterkommt, und dann alle Fehler in EINEM Satz zusammen. Steht
+  Syntax in der Diagnose an erster Stelle, wird das gezählt und gedrosselt (Syntax-Budget in der Beobachtung).
 - Debugging: läuft, tut aber anderes als gewollt → Erwartung und tatsächlichen Ablauf am ERSTEN
   abweichenden Schritt vergleichen.
 - Clean Code: funktioniert, ist schwer verständlich → Benennung, Struktur, Verantwortlichkeiten am

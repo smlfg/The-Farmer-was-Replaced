@@ -99,3 +99,10 @@ class NotebookTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OutputClassTest(unittest.TestCase):
+    def test_syntax_classified(self):
+        self.assertEqual(tutor.output_class("DIAGNOSE: Syntax + Algorithmus | Beobachtung: x"), "syntax")
+        self.assertEqual(tutor.output_class("DIAGNOSE: Algorithmus | Beobachtung: x"), "lehre")
+        self.assertEqual(tutor.output_class("SPRECHEN: hallo"), "lehre")

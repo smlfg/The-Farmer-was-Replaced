@@ -22,6 +22,8 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     image_every=3,        # Screenshot bei jeder n-ten Analyse (immer bei Sprachfrage/„now“) – Bilder bleiben im Kontext
     renew_after=20,       # nach so vielen Analysen frischer Pi-Kontext (Notizbuch/Lernstand bleiben)
     ptt_key=61,           # Sprechtaste (Keycode): 61 = rechte Wahltaste (⌥) – halten zum Sprechen
+    syntax_per_hour=2,    # Syntax zeigt der Editor; höchstens so viele Syntax-Hinweise pro Stunde, je einer zusammengefasst
+    ptt_max=30,           # s: Aufnahme endet spätestens hier, auch wenn das Loslassen verloren geht
     ptt_hold=0.25,        # s halten, bevor die Aufnahme startet (⌥+Taste für Sonderzeichen bleibt frei)
     mic=":0",             # ffmpeg-avfoundation-Eingang (":0" = MacBook-Mikrofon)
     whisper_model=str(Path.home() / ".local/share/whisper.cpp/ggml-small.bin"),
@@ -493,6 +495,13 @@ def notebook_line(d):
         d.get("ziel", "?"), d.get("ansatz", "?"), d.get("reaktion", "?"), d.get("offene_frage", "keine"))
 
 
+def output_class(answer):
+    """Klassifikation vor der Ausgabe: 'syntax', wenn die Hauptdiagnose Syntax ist, sonst 'lehre'."""
+    m = re.search(r"^\s*DIAGNOSE\s*:\s*([^|\n]*)", answer or "", re.M)
+    first = (m.group(1) if m else "").strip().lower()
+    return "syntax" if first.startswith("syntax") else "lehre"
+
+
 def gap_for(modus):
     return CFG.get({"festgefahren": "gap_festgefahren", "zügig": "gap_zuegig"}.get(modus, "gap_normal"))
 
@@ -641,6 +650,17 @@ def cue(name):
     subprocess.run(["afplay", "/System/Library/Sounds/%s.aiff" % name], capture_output=True)
 
 
+def kill_orphan_recordings(keep_pid=None):
+    """Mikrofon nie offen lassen: jede ffmpeg-Aufnahme auf mic.wav außer der aktuellen beenden."""
+    r = subprocess.run(["pgrep", "-f", "avfoundation.*%s" % (STATE / "mic.wav")], capture_output=True, text=True)
+    for pid in r.stdout.split():
+        if keep_pid is None or int(pid) != keep_pid:
+            try:
+                os.kill(int(pid), signal.SIGTERM); log("verwaiste Aufnahme beendet (pid %s)" % pid)
+            except OSError:
+                pass
+
+
 class PTT:
     """Sprechtaste halten -> Aufnahme (ffmpeg) -> loslassen -> whisper-cli (lokal, deutsch).
     Mikrofon ist nur während der Aufnahme offen. Ergebnisse landen in self.results."""
@@ -658,6 +678,7 @@ class PTT:
         if not helper.exists() or helper.stat().st_mtime < src.stat().st_mtime:
             if subprocess.run(["swiftc", "-O", str(src), "-o", str(helper)], capture_output=True).returncode:
                 log("Sprechtaste: Helfer konnte nicht gebaut werden"); return
+        kill_orphan_recordings()
         self.helper = subprocess.Popen([str(helper), str(CFG["ptt_key"])], stdout=subprocess.PIPE, text=True)
         threading.Thread(target=self._reader, daemon=True).start()
 
@@ -697,7 +718,14 @@ class PTT:
                                      "-i", CFG["mic"], "-ac", "1", "-ar", "16000", "-y", str(wav)],
                                     stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         self.t0 = time.time()
+        threading.Timer(CFG["ptt_max"], self._too_long, args=(self.press,)).start()
         log("höre zu …")
+
+    def _too_long(self, press):
+        if self.rec is not None and press == self.press:
+            log("Aufnahme nach %d s automatisch beendet (Loslassen nicht erkannt)" % CFG["ptt_max"])
+            self.armed = False
+            self._stop()
 
     def _stop(self, discard=False):
         with self.lock:
@@ -742,6 +770,7 @@ class PTT:
     def close(self):
         if self.rec:
             self.rec.kill(); self.rec = None   # Mikrofon frei
+        kill_orphan_recordings()
         if self.helper:
             self.helper.kill()
         self.active = False
@@ -764,6 +793,8 @@ def session(gpid):
     parts, modus = [], "normal"
     asked_prefetch = False
     shots_n = 0
+    mic_check = 0.0
+    syntax_said = []          # Zeitpunkte gesprochener Syntax-Hinweise (Budget pro Stunde)
     notebook = load_notebook()  # überlebt Spielneustarts
     history, last_code = [], None
     fails = 0
@@ -772,6 +803,8 @@ def session(gpid):
         while game_pid() == gpid:
             time.sleep(0.5)
             now = time.time()
+            if now - mic_check >= 30:
+                kill_orphan_recordings(ptt.rec.pid if ptt.rec else None); mic_check = now
             # --- Spracheingabe hat Vorrang
             while not ptt.results.empty():
                 kind, val = ptt.results.get()
@@ -840,14 +873,19 @@ def session(gpid):
                     if stale:
                         log("leicht veraltet, trotzdem gesprochen")
                     new_parts, notes, modus, ctl = parse_parts(ans)
+                    syntax_said = [t for t in syntax_said if now - t < 3600]
+                    if new_parts and output_class(ans) == "syntax" and not forced_last:
+                        if len(syntax_said) >= CFG["syntax_per_hour"]:
+                            log("Syntax-Hinweis unterdrückt (Budget %d/h erreicht)" % CFG["syntax_per_hour"])
+                            new_parts = []
+                        else:
+                            syntax_said.append(now); new_parts = new_parts[:1]
                     save_progress(notes)
                     nb = parse_notebook(ans)
                     if nb:
                         notebook.update(nb); save_notebook(notebook)
                         log("Ansatz: %s | Reaktion: %s" % (nb.get("ansatz", "?"), nb.get("reaktion", "?")[:80]))
-                    if ctl == "pause":
-                        F_PAUSED.touch()
-                    elif ctl == "weiter":
+                    if ctl == "weiter":       # Pause setzt nur der Lernende selbst, nie das Modell
                         F_PAUSED.unlink(missing_ok=True)
                     if new_parts:
                         parts = (parts + new_parts) if asked_prefetch else new_parts  # vorausgerechnet: anhängen
@@ -913,7 +951,9 @@ def session(gpid):
             extra = [said_context(now),
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
-                     notebook_line(notebook)]
+                     notebook_line(notebook),
+                     "Syntax-Budget: noch %d Syntax-Hinweis(e) in dieser Stunde. Syntax nur, wenn er sonst nicht weiterkommt; "
+                     "mehrere Syntaxfehler in EINEM Satz zusammenfassen." % max(0, CFG["syntax_per_hour"] - len([t for t in syntax_said if now - t < 3600]))]
             if DICTATION_DROPPED:
                 extra.append("HINWEIS: Deine letzte Antwort wurde NICHT gesprochen, weil sie Code diktiert hat. "
                              "Erkläre in Worten, er schreibt selbst.")
