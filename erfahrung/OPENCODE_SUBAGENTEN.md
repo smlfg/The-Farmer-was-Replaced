@@ -19,7 +19,7 @@
 | 13:04 | nur neue Datei `prompts/ansaetze.md` | 1 Lauf, kurz | ✓ **18 s**, brauchbar |
 | 13:05 | nur Abschnitt in bestehender `prompt.md` | 1 Lauf, kurz | ✗ 180 s nichts, abgebrochen |
 
-Bilanz: 8 von 13 Einzelaufträgen erfolgreich; alle Fehlschläge **still** (kein Fehler, kein Bericht).
+Bilanz: 7 von 13 Einzelaufträgen erfolgreich (ein weiterer Lauf um 11:38 wurde beim Repo-Umzug von mir abgebrochen, nicht gezählt); alle Fehlschläge **still** (kein Fehler, kein Bericht).
 
 ## Beobachtete Muster (belegt)
 
