@@ -468,7 +468,7 @@ def session(gpid):
                         answer_text += "\n[Unterbrochene Erklärung, möglicherweise nur teilweise gehört: " + interrupted_text + "]"
                     log("PTT: Frage empfangen")
                 interrupted_text = None
-            if recording:
+            if recording or recognizing:
                 continue
 
             if F_STILL.exists():
