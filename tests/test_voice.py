@@ -63,6 +63,16 @@ class IntentAndTranscriptTest(unittest.TestCase):
         self.assertEqual(tutor.clean_transcript("\n Erklär mir die zweite Zeile."), "Erklär mir die zweite Zeile.")
 
 
+class SpeakableTest(unittest.TestCase):
+    def test_symbols_become_speech(self):
+        t = tutor.speakable("pro Zelle: harvest → Boden prüfen; a = 3 und x == 0")
+        self.assertNotIn("→", t)
+        self.assertNotIn(";", t)
+        self.assertIn("dann", t)
+        self.assertIn("x gleich 0", t)
+        self.assertIn("a ist 3", t)
+
+
 class SignalsAndContextTest(unittest.TestCase):
     def test_wipe_detected(self):
         now = time.time()

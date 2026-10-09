@@ -379,7 +379,18 @@ def parse(answer):
     return (shorten(text) or None), notes
 
 
+def speakable(text):
+    """Was trotz Prompt als Notiz durchrutscht, für die Stimme in Sprache übersetzen."""
+    text = re.sub(r"\s*(→|->|=>)\s*", ", dann ", text)
+    text = re.sub(r"\s*==\s*", " gleich ", text)
+    text = re.sub(r"\s*!=\s*", " ungleich ", text)
+    text = re.sub(r"\s+=\s+", " ist ", text)
+    text = re.sub(r"\s*;\s*", ". ", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
 def _clean(text):
+    text = speakable(text)
     text = re.sub(r"[`*_#>\[\]]", "", text)
     return re.sub(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "", text).strip()
 
