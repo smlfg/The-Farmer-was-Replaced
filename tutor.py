@@ -146,6 +146,8 @@ def screenshot():
     if not wid:
         return None
     raw, png = STATE / "raw.png", STATE / "shot.png"
+    for f in (raw, png):  # nie ein altes Bild als aktuelles ausgeben
+        f.unlink(missing_ok=True)
     try:
         if subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(raw)], capture_output=True).returncode:
             return None
