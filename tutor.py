@@ -247,11 +247,13 @@ def speaking():
 
 
 def hush():
+    global _voice
     try:
         os.killpg(int(F_SAYPID.read_text()), signal.SIGTERM)  # ganze Gruppe: piper + afplay
     except Exception:
         pass
     F_SAYPID.unlink(missing_ok=True)
+    _voice = None  # sonst meldet speaking() den getöteten Prozess bis zum Reap noch als aktiv
 
 
 def say(text):
