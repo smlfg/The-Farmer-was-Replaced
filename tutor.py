@@ -724,6 +724,7 @@ def session(gpid):
     voice_text = None
     voice_pending = False        # Antwort auf Spracheingabe steht aus -> nichts anderes spricht
     parts, modus = [], "normal"
+    asked_prefetch = False
     notebook = load_notebook()  # überlebt Spielneustarts
     say(greeting(notebook))      # sofort da sein, bevor die erste (langsame) Analyse fertig ist
     last_start = last_spoke = time.time()
@@ -810,7 +811,7 @@ def session(gpid):
                     elif ctl == "weiter":
                         F_PAUSED.unlink(missing_ok=True)
                     if new_parts:
-                        parts = new_parts
+                        parts = (parts + new_parts) if asked_prefetch else new_parts  # vorausgerechnet: anhängen
                         log("Modus: %s, %d Teil(e)" % (modus, len(parts)))
                     else:
                         log("SKIP")
@@ -845,8 +846,8 @@ def session(gpid):
                 reason = "ANTWORT DES LERNENDEN: %s" % answer_text
             elif forced:
                 reason = "jetzt erklären (vom Lernenden angefordert, nicht SKIP)"
-            elif parts:
-                continue  # erst die vorhandenen Teile sprechen
+            elif len(parts) > 1:
+                continue  # erst die vorhandenen Teile sprechen; beim letzten schon vorausrechnen
             elif paused:
                 continue
             elif talking and not (now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) * CFG["prefetch"]):
@@ -872,6 +873,7 @@ def session(gpid):
             pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
             urgent = forced or answer_text is not None or voice_text is not None
+            asked_prefetch = reason.startswith("weiter")
             voice_pending = voice_text is not None
             ask_t, asked_hash, forced_last = now, h, urgent
             prev, sent_hash, pending_since, forced, answer_text, voice_text = st, h, None, False, None, None

@@ -133,3 +133,6 @@
 - erklärt: while-True mit if-Bedingung; Trennung Aktion vs. Bewegung; 2D-Traversierung mit zwei for-Schleifen; Modulo + and für Schachbrettmuster  (2026-10-09)
 - selbstständig: Schachbrettmuster mit `x % 2 == 0 and y % 2 == 0` umgesetzt; Shadowing-Fix in main.py (j innen, i außen)  (2026-10-09)
 - mit Hilfe: Verbindung Positionsbedingung mit innerem for-Block; Umbenennung i in j bei Shadowing  (2026-10-09)
+- erklärt: 2D-Traversierung mit zwei for, while mit if; mit Hilfe: j innen, i außen; selbstständig: Shadowing in main.py korrigiert  (2026-10-09)
+- erklärt: 2D-Traversierung, No-Op von till auf Soil; mit Hilfe: j innen, i außen; selbstständig: Shadowing in main.py korrigiert  (2026-10-09)
+- erklärt: 2D-Traversierung mit zwei for, max = get_world_size als dynamische Größe; mit Hilfe: i außen j innen, Schachbrettmuster mit Modulo + and; selbstständig: Shadowing in main.py korrigiert  (2026-10-09)
