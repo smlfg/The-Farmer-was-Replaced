@@ -84,6 +84,8 @@ Spiel läuft ─► tutor.py (Wächter, lokal)
 - **Konzeptkarte** ([konzepte.md](konzepte.md)): 24 feste Python-Konzepte, je *offen*, *mit Hilfe* oder *kann ich*,
   mit Beleg. Du darfst die Stufe selbst ändern, dein Eintrag gilt. Der Coach stuft nur hoch und erklärt
   „kann ich“-Konzepte nicht mehr. Alter Freitext-Lernstand: [Archiv](docs/lernstand-archiv-2026-10-09.md).
+- **Lehrplan** ([lehrplan.md](lehrplan.md)): 10.–23.10., täglich 19:00, ein Konzept pro Termin. Der Coach nennt
+  es beim Start und bezieht Antworten darauf.
 - **Übungsserie** ([uebung.json](uebung.json)): Jede Minute, in der du Code änderst, zählt. Ab 25 Minuten
   pro Tag zählt der Tag zur Serie; der Coach nennt sie in seiner Vorstellung.
 - **Unterbrechung**: Der Tutor merkt sich, was er gesagt hat und wo du unterbrochen hast, und bezieht Rückfragen darauf.

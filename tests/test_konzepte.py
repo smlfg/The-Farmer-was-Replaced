@@ -76,5 +76,18 @@ class SerieTest(unittest.TestCase):
         self.assertEqual(k.today_minutes(), 2)
 
 
+class LehrplanTest(unittest.TestCase):
+    def test_lesson_for_day(self):
+        self.assertEqual(k.lesson("2026-10-13")[0], "Rückgabewert (return ist nicht print)")
+        self.assertIsNone(k.lesson("2026-12-24"))
+        self.assertIn("Rückgabewert", k.lesson_intro("2026-10-13"))
+        self.assertEqual(k.lesson_intro("2026-12-24"), "")
+        self.assertNotIn("`", k.lesson_line("2026-10-10"))
+
+    def test_plan_has_14_days(self):
+        days = [k.lesson("2026-10-%02d" % d) for d in range(10, 24)]
+        self.assertTrue(all(days))
+
+
 if __name__ == "__main__":
     unittest.main()

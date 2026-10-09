@@ -818,7 +818,7 @@ def session(gpid):
     out_mtime, out_text = read_output()
     err_hash = hashlib.md5(out_text.encode()).hexdigest()
     error_now = None
-    say(INTRO + " " + konzepte.intro_line()); log("Vorstellung gesprochen")
+    say(" ".join(t for t in (INTRO, konzepte.intro_line(), konzepte.lesson_intro()) if t)); log("Vorstellung gesprochen")
     last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
@@ -1031,6 +1031,7 @@ def session(gpid):
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
                      notebook_line(notebook),
                      konzepte.summary(),
+                     konzepte.lesson_line(),
                      "Letzte Spielausgabe (output.txt, beim Ausführen): %s" % (out_text.strip()[-600:] or "(leer)"),
                      "Syntax-Budget: noch %d Syntax-Hinweis(e) in dieser Stunde. Syntax nur, wenn er sonst nicht weiterkommt; "
                      "mehrere Syntaxfehler in EINEM Satz zusammenfassen." % max(0, CFG["syntax_per_hour"] - len([t for t in syntax_said if now - t < 3600]))]

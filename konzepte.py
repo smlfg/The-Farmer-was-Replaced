@@ -12,6 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MAP = HERE / "konzepte.md"
 PRACTICE = HERE / "uebung.json"
+PLAN = HERE / "lehrplan.md"
 LEVELS = ("offen", "mit Hilfe", "kann ich")
 DAILY_GOAL_MIN = 25
 
@@ -185,3 +186,32 @@ def intro_line():
     if m >= DAILY_GOAL_MIN:
         return "Deine Serie steht bei %d Tagen, die 25 Minuten für heute hast du schon." % s
     return "Deine Serie steht bei %d Tagen. Heute fehlen noch %d Minuten." % (s, DAILY_GOAL_MIN - m)
+
+
+# ---------- Lehrplan: ein Konzept pro Termin ----------
+def lesson(day=None):
+    """Tageskonzept aus lehrplan.md -> (konzept, bezug) oder None, wenn heute nichts geplant ist."""
+    day = day or time.strftime("%Y-%m-%d")
+    try:
+        lines = PLAN.read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 3 and cells[0] == day:
+            return cells[1], cells[2]
+    return None
+
+
+def lesson_line(day=None):
+    """Für jede Beobachtung an das Modell."""
+    l = lesson(day)
+    if not l:
+        return "Tageskonzept: keins geplant"
+    return ("Tageskonzept laut Lehrplan: %s (Bezug: %s). Beziehe Antworten darauf, wenn es zur Frage oder zum "
+            "Fehler passt; dräng es nicht auf." % (l[0], re.sub(r"`", "", l[1])))
+
+
+def lesson_intro(day=None):
+    l = lesson(day)
+    return ("Heute geht es um: %s." % re.sub(r"`", "", l[0])) if l else ""
