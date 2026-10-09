@@ -174,3 +174,9 @@ class GamePidTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CadenceTest(unittest.TestCase):
+    def test_stale_answer_spoken_after_long_silence(self):
+        self.assertEqual(tutor.should_speak(True, 0, silent_for=75), (True, 0))
+        self.assertEqual(tutor.should_speak(True, 0, silent_for=10), (False, 1))

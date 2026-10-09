@@ -445,13 +445,13 @@ def shorten(text, limit=85):
     return " ".join(out + ([question] if question else []))
 
 
-def should_speak(stale, stale_drops):
+def should_speak(stale, stale_drops, silent_for=0.0, max_silence=60.0):
     """Entscheidet, ob eine fertige Antwort gesprochen wird.
 
     Rückgabe: (sprechen, neuer_zähler). Eine veraltete Antwort wird nur einmal
     verworfen; ist der Zähler schon 1, wird sie trotzdem gesprochen, damit der
     Tutor bei ständigem Tippen nicht verstummt."""
-    if not stale:
+    if not stale or silent_for >= max_silence:  # Takt: nach 60 s Stille nie mehr verwerfen
         return True, 0
     if stale_drops == 0:
         return False, 1
@@ -748,7 +748,7 @@ def session(gpid):
             h = hashlib.md5(json.dumps([st["code"], st["unlocks"], manual_unlocks()], sort_keys=True).encode()).hexdigest()  # Inventar zählt nicht
             if ans is not None:
                 stale = h != asked_hash and not forced_last
-                speak, stale_drops = should_speak(stale, stale_drops)
+                speak, stale_drops = should_speak(stale, stale_drops, now - max(last_start, last_spoke))
                 if not speak:
                     log("veraltet verworfen – Stand hat sich geändert")
                 else:
