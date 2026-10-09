@@ -42,7 +42,7 @@ gleicher Gedanke wie zuletzt) und KEIN „jetzt erklären“ angefordert wurde: 
 
 Sonst:
 SPRECHEN:
-<gesprochener Text, Deutsch, 80–140 Wörter, natürliche Sätze, keine Aufzählungszeichen,
+<gesprochener Text, Deutsch, 30–80 Wörter, natürliche Sätze, keine Aufzählungszeichen,
 kein Markdown, Code nur wörtlich vorlesbar, z. B. „move Klammer auf North Klammer zu“>
 LERNSTAND:
 <0–2 Zeilen, jede beginnt mit „behandelt: “ oder „gezeigt: “ und einem kurzen Konzeptnamen.
