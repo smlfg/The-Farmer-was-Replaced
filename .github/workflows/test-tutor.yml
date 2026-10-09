@@ -1,0 +1,19 @@
+name: Tutor tests
+
+on:
+  push:
+    branches: [main, feature/offline-tutor-fallback]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile tutor modules
+        run: python -m compileall -q tutor.py offline_tutor.py
+      - name: Offline and existing tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v

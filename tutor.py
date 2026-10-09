@@ -6,6 +6,7 @@ Der LaunchAgent startet `run`. Ohne Spiel: nur pgrep alle paar Sekunden, keine M
 """
 import base64, fcntl, hashlib, json, os, plistlib, re, signal, subprocess, sys, threading, time, queue
 from pathlib import Path
+from offline_tutor import LocalPi
 
 HERE = Path(__file__).resolve().parent
 STATE = Path(os.environ.get("TUTOR_STATE", Path.home() / ".tfwr-tutor"))
@@ -16,7 +17,13 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
-    proactive=0,          # 0 = spricht nur auf Frage (Sprechtaste/antwort/now) oder bei Fehler beim Ausführen; 1 = eigene Impulse
+    proactive=0,          # nur auf Frage oder Ausführungsfehler sprechen
+    api_fail_timeout=40,  # bei unerreichbarer Cloud nicht drei Minuten warten
+    api_retry=180,         # nach lokalem Fallback Cloud erneut versuchen
+    offline=0,             # TUTOR_OFFLINE=1 erzwingt Offlinebetrieb
+    local_model="qwen3:8b",
+    local_url="http://127.0.0.1:11434/api/generate",
+    local_timeout=25,
     gap_festgefahren=30, gap_normal=40, gap_zuegig=50,  # s zwischen Teilen; wer festhängt, bekommt mehr Begleitung
     prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
     max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
@@ -42,7 +49,7 @@ GAME_DATA = Path.home() / "Library/Application Support/com.TheFarmerWasReplaced.
 DOCS = Path.home() / ("Library/Application Support/Steam/steamapps/common/The Farmer Was Replaced/"
                       "TheFarmerWasReplaced.app/Contents/Resources/Data/StreamingAssets/Languages/DE/docs")
 PROGRESS = HERE / "progress.md"
-OUTPUT = GAME_DATA / "output.txt"   # Ausgabe des Spiels beim Ausführen: print und Fehlermeldungen
+OUTPUT = GAME_DATA / "output.txt"
 INTRO = ("Ich bin dein Coach für The Farmer Was Replaced. Ich melde mich nur, wenn du mich fragst: "
          "rechte Wahltaste halten und sprechen. Und wenn dein Code beim Ausführen einen Fehler wirft.")
 
@@ -126,7 +133,12 @@ def read_state():
     if not s:
         return None
     code = {}
-    for f in sorted(s.glob("*.py")):
+    code_files = sorted(f for f in s.glob("*.py") if f.name != "__builtins__.py")
+    try:
+        focus = max(code_files, key=lambda f: f.stat().st_mtime).name if code_files else ""
+    except OSError:
+        focus = ""
+    for f in code_files:
         if f.name == "__builtins__.py":
             continue
         try:
@@ -156,7 +168,7 @@ def read_state():
             unlocks = d["unlocks"]
     else:
         log("save.json unerwartete Struktur (%s): keine Objektwurzel" % (s / "save.json"))
-    return dict(save=s.name, code=code, unlocks=unlocks, items=items)
+    return dict(save=s.name, code=code, unlocks=unlocks, items=items, focus=focus)
 
 
 def docs_for(unlocks, code="", limit=8000):
@@ -245,6 +257,7 @@ class Pi:
         self.settling = False    # nach abort: warten, bis der abgebrochene Lauf wirklich endet
         self.settle_t = 0.0
         self.req = 0
+        self.last_error = None
         log("Pi gestartet (Sitzung %s, Modell %s)" % (sid, CFG["model"]))
 
     def _reader(self):
@@ -265,6 +278,7 @@ class Pi:
     def ask(self, text, png):
         self.req += 1
         self.started = False
+        self.last_error = None
         msg = {"type": "prompt", "id": "obs-%d" % self.req, "message": text}
         if png:
             msg["images"] = [{"type": "image", "data": base64.b64encode(png).decode(), "mimeType": "image/png"}]
@@ -280,7 +294,11 @@ class Pi:
                 raise RuntimeError("Pi beendet")
             if t == "response" and e.get("command") == "prompt" and not e.get("success"):
                 self.busy = False
-                log("Pi lehnt ab: %s" % e.get("error"))
+                self.last_error = str(e.get("error") or "Modellanfrage abgelehnt")
+                log("Pi lehnt ab: %s" % self.last_error)
+            if t in ("agent_error", "error") and self.busy:
+                self.last_error = str(e.get("error") or e.get("message") or "Agentenfehler")
+                self.busy = False
             if t == "agent_start" and self.busy:
                 self.started = True
             if t == "agent_settled":
@@ -619,6 +637,8 @@ def observation(reason, st, prev, png, first, extra=None):
     parts = ["BEOBACHTUNG – Anlass: %s" % reason,
              "Screenshot: " + ("angehängt (Spielfenster)" if png else "kein Screenshot verfügbar – nichts Visuelles behaupten"),
              "Spielstand: %s" % st["save"]]
+    if st.get("focus"):
+        parts.append("Fokusdatei (jüngste Änderung): " + st["focus"])
     for name, src in st["code"].items():
         changed = (not prev) or prev["code"].get(name) != src
         parts.append("### %s%s\n```\n%s\n```" % (name, " (geändert)" if changed and prev else "", src or "(leer)"))
@@ -801,7 +821,16 @@ class PTT:
 # ---------- Hauptschleife ----------
 def session(gpid):
     """Eine Tutor-Sitzung, solange das Spiel läuft."""
-    pi, prev, sent_hash = Pi(), None, None
+    if CFG["offline"]:
+        pi = LocalPi(CFG["local_model"], CFG["local_url"], CFG["local_timeout"])
+        log("Offline-Tutor erzwungen")
+    else:
+        try:
+            pi = Pi()
+        except OSError as e:
+            log("Pi konnte nicht starten: %s – lokaler Tutor" % e)
+            pi = LocalPi(CFG["local_model"], CFG["local_url"], CFG["local_timeout"])
+    prev, sent_hash = None, None
     ptt = PTT()
     last_shot = last_spoke = last_start = 0.0
     pending_since = None
@@ -819,13 +848,34 @@ def session(gpid):
     syntax_said = []          # Zeitpunkte gesprochener Syntax-Hinweise (Budget pro Stunde)
     notebook = load_notebook()  # überlebt Spielneustarts
     out_mtime, out_text = read_output()
-    err_hash = hashlib.md5(out_text.encode()).hexdigest()  # alte Fehler vom letzten Mal nicht erneut melden
+    err_hash = hashlib.md5(out_text.encode()).hexdigest()
     error_now = None
     say(INTRO); log("Vorstellung gesprochen")
     last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
+    last_observation = None
+    cloud_retry_at = time.time() + CFG["api_retry"]
+
+    def switch_to_local(reason):
+        nonlocal pi, prev, sent_hash, parts, forced, voice_pending, asked_prefetch, cloud_retry_at
+        log("Cloud nicht verfügbar (%s) – lokaler Tutor aktiv" % reason)
+        try:
+            pi.close()
+        except (OSError, RuntimeError):
+            pass
+        pi = LocalPi(CFG["local_model"], CFG["local_url"], CFG["local_timeout"])
+        cloud_retry_at = time.time() + CFG["api_retry"]
+        prev, sent_hash, parts, asked_prefetch = None, None, [], False
+        voice_pending = False
+        if last_observation:
+            pi.ask(last_observation)
+            voice_pending = True
+            forced = False
+        else:
+            forced = True
+
     try:
         while game_pid() == gpid:
             time.sleep(0.5)
@@ -835,7 +885,17 @@ def session(gpid):
                 out_mtime, out_text = m_out
                 err, err_hash = new_error(out_text, err_hash)
                 if err:
-                    error_now = err; log("Fehler beim Ausführen erkannt: %s" % err.splitlines()[0][:100])
+                    error_now = err
+                    log("Fehler beim Ausführen erkannt: %s" % err.splitlines()[0][:100])
+            if (not CFG["offline"] and isinstance(pi, LocalPi) and now >= cloud_retry_at
+                    and not pi.busy and not ptt.active and not parts):
+                try:
+                    pi = Pi()
+                    prev, sent_hash = None, None
+                    log("Cloud-Tutor: Wiederverbindung wird versucht")
+                except OSError as e:
+                    cloud_retry_at = now + CFG["api_retry"]
+                    log("Cloud weiterhin unerreichbar: %s" % e)
             if now - mic_check >= 30:
                 kill_orphan_recordings(ptt.rec.pid if ptt.rec else None); mic_check = now
             # --- Spracheingabe hat Vorrang
@@ -883,12 +943,16 @@ def session(gpid):
                 continue
             try:
                 ans = pi.poll()
-            except RuntimeError:
-                fails += 1
-                log("Pi abgestürzt (%d)" % fails)
-                if fails >= 3:
-                    log("zu viele Fehler – Tutor ruht bis zum nächsten Spielstart"); return
-                pi = Pi(); prev = None; voice_pending = False; continue
+            except (RuntimeError, OSError) as e:
+                if isinstance(pi, LocalPi):
+                    log("Lokaler Tutorfehler: %s" % e)
+                    pi = LocalPi(CFG["local_model"], CFG["local_url"], CFG["local_timeout"])
+                else:
+                    switch_to_local(str(e))
+                continue
+            if isinstance(pi, Pi) and pi.last_error:
+                switch_to_local(pi.last_error)
+                continue
             st = read_state()
             if not st:
                 continue
@@ -930,7 +994,8 @@ def session(gpid):
                 fails = 0
             # nächster Teil (CODE -> LOGIK -> MODELL) ohne Modellaufruf
             if parts and not speaking() and \
-                    (last_start == 0 or now - last_start >= gap_for(modus) or forced_last or not CFG["proactive"]):
+                    (last_start == 0 or now - last_start >= gap_for(modus)
+                     or forced_last or not CFG["proactive"]):
                 text = parts.pop(0)
                 forced_last = False
                 with open(STATE / "spoken.txt", "a") as f:
@@ -939,12 +1004,17 @@ def session(gpid):
                 say(text)
                 last_start = last_spoke = time.time()
                 continue
-            if pi.req >= CFG["renew_after"] and pi.ready() and not voice_pending and not parts:
+            if isinstance(pi, Pi) and pi.req >= CFG["renew_after"] and pi.ready() and not voice_pending and not parts:
                 log("frischer Pi-Kontext nach %d Analysen" % pi.req)
                 pi.close(); pi = Pi(); prev = None
             if pi.busy:
-                if now - ask_t > CFG["analysis_timeout"]:
-                    log("Analyse-Timeout"); pi.abort(); voice_pending = False
+                timeout = CFG["api_fail_timeout"] if isinstance(pi, Pi) else CFG["analysis_timeout"]
+                if now - ask_t > timeout:
+                    if isinstance(pi, Pi):
+                        switch_to_local("Antwort-Timeout")
+                    else:
+                        log("Lokale Analyse: Timeout")
+                        pi.abort(); voice_pending = False
                 continue
             if not pi.ready():
                 continue
@@ -962,7 +1032,7 @@ def session(gpid):
             elif error_now is not None and not talking:
                 reason = "FEHLER BEIM AUSFÜHREN (Spielausgabe output.txt):\n%s" % error_now
             elif not CFG["proactive"]:
-                continue  # nur auf Frage oder bei Fehler sprechen
+                continue  # nur auf Frage oder bei Ausführungsfehler
             elif len(parts) > 1:
                 continue  # erst die vorhandenen Teile sprechen; beim letzten schon vorausrechnen
             elif paused:
@@ -996,7 +1066,16 @@ def session(gpid):
                 extra.append("HINWEIS: Deine letzte Antwort wurde NICHT gesprochen, weil sie Code diktiert hat. "
                              "Erkläre in Worten, er schreibt selbst.")
                 del DICTATION_DROPPED[:]
-            pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
+            last_observation = observation(reason, st, prev, png, prev is None, extra)
+            try:
+                pi.ask(last_observation, png if isinstance(pi, Pi) else None)
+            except (OSError, RuntimeError) as e:
+                if isinstance(pi, Pi):
+                    switch_to_local(str(e))
+                else:
+                    log("Lokale Anfrage fehlgeschlagen: %s" % e)
+                    pi.abort()
+                continue
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
             urgent = forced or answer_text is not None or voice_text is not None or error_now is not None
             error_now = None
