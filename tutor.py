@@ -527,6 +527,8 @@ class PTT:
         self.active = False      # Aufnahme oder Transkription läuft -> nichts anderes darf sprechen
         self.rec = None
         self.armed = False
+        self.press = 0           # zählt Tastendrücke: nur der Timer des letzten Drucks darf starten
+        self.lock = threading.Lock()
         self.helper = None
         helper = STATE / "ptt"
         src = HERE / "ptt.swift"
@@ -545,7 +547,8 @@ class PTT:
                 log("Sprechtaste bereit (Keycode %s halten)" % CFG["ptt_key"])
             elif ev == "DOWN":
                 self.armed = True
-                threading.Timer(CFG["ptt_hold"], self._maybe_start).start()
+                self.press += 1
+                threading.Timer(CFG["ptt_hold"], self._maybe_start, args=(self.press,)).start()
             elif ev == "OTHER":
                 self.armed = False  # ⌥+Taste = Sonderzeichen, keine Sprechtaste
                 if self.rec:
@@ -555,9 +558,13 @@ class PTT:
                 if self.rec:
                     self._stop()
 
-    def _maybe_start(self):
-        if not self.armed or self.rec:
-            return
+    def _maybe_start(self, press):
+        with self.lock:  # nie zwei Aufnahmen gleichzeitig
+            if not self.armed or self.rec or press != self.press:
+                return
+            self._start()
+
+    def _start(self):
         self.active = True
         hush()                      # TTS sofort aus (nie die eigene Stimme aufnehmen)
         cue("Tink")                 # Startton VOR der Aufnahme
@@ -570,7 +577,10 @@ class PTT:
         log("höre zu …")
 
     def _stop(self, discard=False):
-        rec, self.rec = self.rec, None
+        with self.lock:
+            rec, self.rec = self.rec, None
+        if rec is None:
+            return
         try:
             rec.stdin.write(b"q"); rec.stdin.flush()  # ffmpeg sauber beenden
             rec.wait(timeout=3)
@@ -583,6 +593,12 @@ class PTT:
         threading.Thread(target=self._transcribe, args=(time.time() - self.t0, err), daemon=True).start()
 
     def _transcribe(self, secs, err):
+        try:
+            self._transcribe_inner(secs, err)
+        finally:
+            self.active = False
+
+    def _transcribe_inner(self, secs, err):
         wav = STATE / "mic.wav"
         if not wav.exists() or wav.stat().st_size < 2000:
             log("Aufnahme leer – Mikrofon-Berechtigung? %s" % err.strip()[:120])
@@ -631,32 +647,30 @@ def session(gpid):
             time.sleep(0.5)
             now = time.time()
             # --- Spracheingabe hat Vorrang
-            if ptt.active:
+            while not ptt.results.empty():
+                kind, val = ptt.results.get()
+                if kind == "error":
+                    if val:
+                        say(val)
+                    continue
+                intent = local_intent(val)
+                if intent == "pause":
+                    F_PAUSED.touch(); say("Okay, ich warte. Sag weiter, wenn du soweit bist.")
+                elif intent == "weiter":
+                    F_PAUSED.unlink(missing_ok=True); say("Okay, weiter."); continues = 0
+                    last_spoke = 0.0
+                elif intent in ("langsamer", "schneller"):
+                    w = words_per_part() + (-20 if intent == "langsamer" else 20)
+                    F_DENSE.write_text(str(max(20, min(80, w))))
+                    say("Okay, ab jetzt kleinere Häppchen." if intent == "langsamer" else "Okay, ab jetzt mehr auf einmal.")
+                else:
+                    voice_text = val
+                log("Sprachbefehl: %s" % (intent or "Frage an Tutor"))
+            if ptt.active:  # Aufnahme/Transkription läuft: niemand sonst spricht oder analysiert
                 if pi.busy and not voice_pending:
                     pi.abort()
                 parts = []
-                while not ptt.results.empty():
-                    kind, val = ptt.results.get()
-                    ptt.active = False
-                    if kind == "error":
-                        if val:
-                            say(val)
-                        continue
-                    intent = local_intent(val)
-                    if intent == "pause":
-                        F_PAUSED.touch(); say("Okay, ich warte. Sag weiter, wenn du soweit bist.")
-                    elif intent == "weiter":
-                        F_PAUSED.unlink(missing_ok=True); say("Okay, weiter."); continues = 0
-                        last_spoke = 0.0
-                    elif intent in ("langsamer", "schneller"):
-                        w = words_per_part() + (-20 if intent == "langsamer" else 20)
-                        F_DENSE.write_text(str(max(20, min(80, w))))
-                        say("Okay, ab jetzt kleinere Häppchen." if intent == "langsamer" else "Okay, ab jetzt mehr auf einmal.")
-                    else:
-                        voice_text = val
-                    log("Sprachbefehl: %s" % (intent or "Frage an Tutor"))
-                if ptt.active:
-                    continue
+                continue
             if F_STILL.exists():
                 F_STILL.unlink(); hush(); pi.abort(); parts = []
             if F_NOW.exists():
