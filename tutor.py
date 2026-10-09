@@ -32,6 +32,8 @@ PROGRESS = HERE / "progress.md"
 LABEL = "com.smlfg.tfwr-tutor"
 PLIST = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
 F_PAUSED, F_NOW, F_STILL, F_SAYPID = (STATE / n for n in ("paused", "now", "still", "say.pid"))
+PTT_EVENTS = STATE / "ptt-events.jsonl"
+PTT_TRANSCRIBE = STATE / "ptt-transcribe"
 
 
 def log(msg):
@@ -377,10 +379,51 @@ def observation(reason, st, prev, png, first):
     return "\n\n".join(parts)
 
 
+
+# ---------- Native Push-to-talk bridge ----------
+class VoiceEvents:
+    def __init__(self):
+        self.offset = PTT_EVENTS.stat().st_size if PTT_EVENTS.exists() else 0
+    def read(self):
+        if not PTT_EVENTS.exists():
+            return []
+        if PTT_EVENTS.stat().st_size < self.offset:
+            self.offset = 0
+        with PTT_EVENTS.open() as f:
+            f.seek(self.offset)
+            lines = f.readlines()
+            self.offset = f.tell()
+        result = []
+        for line in lines:
+            try:
+                result.append(json.loads(line))
+            except ValueError:
+                pass
+        return result
+
+def transcribe_ptt(path):
+    if not PTT_TRANSCRIBE.exists():
+        log("PTT: Transkription fehlt, siehe VOICE_SETUP.md")
+        return ""
+    try:
+        result = subprocess.run([str(PTT_TRANSCRIBE), path], capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            log("PTT: " + result.stderr.strip()[:160])
+            return ""
+        return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log("PTT: " + str(exc))
+        return ""
+
 # ---------- Hauptschleife ----------
 def session(gpid):
     """Eine Tutor-Sitzung, solange das Spiel läuft."""
     pi, prev, sent_hash = Pi(), None, None
+    voice_events = VoiceEvents()
+    recording = recognizing = False
+    transcription = queue.Queue()
+    interrupted_text = None
+    speaking_text = None
     last_shot = last_spoke = 0.0
     pending_since = None
     continues = 0
@@ -392,8 +435,42 @@ def session(gpid):
     ask_t, forced_last = 0.0, False
     try:
         while game_pid() == gpid:
-            time.sleep(1)
+            time.sleep(0.15)
             now = time.time()
+            for event in voice_events.read():
+                kind = event.get("event")
+                if kind == "down":
+                    recording = True
+                    hush(); pi.abort()
+                    while not pi.events.empty():
+                        try: pi.events.get_nowait()
+                        except queue.Empty: break
+                    interrupted_text = speaking_text
+                    speaking_text = None
+                    answer_text = None
+                    forced = False
+                elif kind == "recording":
+                    recording = True
+                elif kind == "up" and recording:
+                    recording = False
+                    recognizing = True
+                    threading.Thread(target=lambda path=event.get("detail", ""): transcription.put(transcribe_ptt(path)), daemon=True).start()
+                elif kind == "error":
+                    recording = False
+                    log("PTT: " + event.get("detail", "Fehler"))
+            if recognizing:
+                try: voice_text = transcription.get_nowait()
+                except queue.Empty: continue
+                recognizing = False
+                if voice_text:
+                    answer_text = voice_text
+                    if interrupted_text:
+                        answer_text += "\n[Unterbrochene Erklärung, möglicherweise nur teilweise gehört: " + interrupted_text + "]"
+                    log("PTT: Frage empfangen")
+                interrupted_text = None
+            if recording:
+                continue
+
             if F_STILL.exists():
                 F_STILL.unlink(); hush(); pi.abort()
             if F_NOW.exists():
@@ -434,6 +511,7 @@ def session(gpid):
                             f.write("[%s] %s\n" % (time.strftime("%H:%M"), text))
                         log("spricht: %s…" % text[:90])
                         say(text)
+                        speaking_text = text
                     else:
                         log("SKIP")
                     last_spoke = time.time()
@@ -445,6 +523,7 @@ def session(gpid):
             if speaking():
                 last_spoke = now
                 continue
+            speaking_text = None
             # Anlass bestimmen
             reason = None
             if answer_text is not None:
