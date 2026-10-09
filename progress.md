@@ -118,3 +118,6 @@
 - mit Hilfe: Verbindung von Positionsbedingung mit dem inneren for-Block in main.py  (2026-10-09)
 - selbstständig: `x = get_pos_x()` und `y = get_pos_y()` geschrieben, Drohnenposition korrekt geholt  (2026-10-09)
 - mit Hilfe: `Items.Water` statt `water` in `use_item` schreiben und Datei speichern  (2026-10-09)
+- erklärt: No-Op-Verhalten von till() auf bereits umgegrabenem Boden als Antwort auf Verständnisfrage  (2026-10-09)
+- erklärt: No-Op-Verhalten von till() auf bereits umgegrabenem Boden  (2026-10-09)
+- erklärt: Trace Pfad Start (0,0) über move(East) und move(North) bis zur ersten Ernte an (1,1) als Zustandstabelle vorgeführt bekommen  (2026-10-09)

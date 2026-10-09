@@ -17,6 +17,7 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
     gap_festgefahren=45, gap_normal=60, gap_zuegig=90,  # s zwischen den Teilen CODE/LOGIK/MODELL je Modus
+    prefetch=0.5,         # nächste Analyse startet nach diesem Anteil der Lücke (Antwort liegt zum Takt bereit)
     ptt_key=61,           # Sprechtaste (Keycode): 61 = rechte Wahltaste (⌥) – halten zum Sprechen
     ptt_hold=0.25,        # s halten, bevor die Aufnahme startet (⌥+Taste für Sonderzeichen bleibt frei)
     mic=":0",             # ffmpeg-avfoundation-Eingang (":0" = MacBook-Mikrofon)
@@ -243,9 +244,10 @@ class Pi:
                     self.settling = False
                     continue
                 if self.busy and self.started:
-                    self.busy = False
+                    self.started = False   # busy bleibt, bis der Text da ist (sonst startet sofort die nächste Analyse)
                     self.send({"type": "get_last_assistant_text", "id": "last"})
-            if t == "response" and e.get("id") == "last":
+            if t == "response" and e.get("id") == "last" and self.busy:
+                self.busy = False
                 return (e.get("data") or {}).get("text") or ""
         return None
 
@@ -769,7 +771,7 @@ def session(gpid):
                 voice_pending = False
                 fails = 0
             # nächster Teil (CODE -> LOGIK -> MODELL) ohne Modellaufruf
-            if parts and not speaking() and not pi.busy and \
+            if parts and not speaking() and \
                     (last_start == 0 or now - last_start >= gap_for(modus) or forced_last):
                 text = parts.pop(0)
                 forced_last = False
@@ -804,7 +806,7 @@ def session(gpid):
                 pending_since = pending_since or now
                 if now - pending_since >= CFG["debounce"] and now - last_spoke >= CFG["think_pause"]:
                     reason = "Code/Spielstand geändert"
-            elif now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) \
+            elif now - last_shot >= CFG["interval"] and now - last_start >= gap_for(modus) * CFG["prefetch"] \
                     and now - last_spoke >= CFG["continue_after"] and continues < CFG["max_continues"]:
                 reason = "weiter (Coach-Impuls fällig: nicht SKIP, nichts wiederholen)"
                 continues += 1

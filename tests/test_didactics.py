@@ -66,8 +66,11 @@ class PiCorrelationTest(unittest.TestCase):
         self.assertTrue(pi.busy)
         pi.events.put({"type": "agent_start"}); pi.events.put({"type": "agent_settled"})
         pi.poll()
-        self.assertFalse(pi.busy)
         self.assertEqual(pi.sent[-1]["type"], "get_last_assistant_text")
+        self.assertTrue(pi.busy)  # noch beschäftigt, bis der Text da ist
+        pi.events.put({"type": "response", "id": "last", "data": {"text": "SPRECHEN: hallo"}})
+        self.assertEqual(pi.poll(), "SPRECHEN: hallo")
+        self.assertFalse(pi.busy)
 
     def test_approaches_rotate(self):
         self.assertNotEqual(tutor.approach_for(0), tutor.approach_for(1))
