@@ -389,6 +389,13 @@ def speakable(text):
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+def is_placeholder(text):
+    """Leere Ebene, die das Modell nur markiert hat – nie vorlesen."""
+    t = text.strip().strip("().-–— ").lower()
+    return len(t.split()) <= 3 and bool(re.fullmatch(
+        r"(nicht nötig|nicht notwendig|entfällt|keine?s?|leer|n/?a|ohne|nichts|weggelassen|übersprungen)\.?", t))
+
+
 def _clean(text):
     text = speakable(text)
     text = re.sub(r"[`*_#>\[\]]", "", text)
@@ -413,7 +420,8 @@ def parse_parts(answer):
         elif cur:
             blocks[cur] += "\n" + line
     limit = words_per_part()
-    parts = [shorten(_clean(blocks[k]), limit) for k in LEVELS if _clean(blocks.get(k, ""))]
+    parts = [shorten(_clean(blocks[k]), limit) for k in LEVELS
+             if _clean(blocks.get(k, "")) and not is_placeholder(_clean(blocks[k]))]
     if not parts and _clean(blocks.get("SPRECHEN", "")):
         parts = [shorten(_clean(blocks["SPRECHEN"]), max(limit, 60))]
     modus = (blocks.get("MODUS", "normal").strip().split() or ["normal"])[0].lower()

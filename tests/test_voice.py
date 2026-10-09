@@ -40,6 +40,10 @@ class ParsePartsTest(unittest.TestCase):
         parts = tutor.parse_parts("CODE: a b c.\nMODELL: d e f?")[0]
         self.assertEqual(parts, ["a b c.", "d e f?"])
 
+    def test_placeholder_levels_not_spoken(self):
+        parts = tutor.parse_parts("CODE: Dein or braucht zwei Vergleiche.\nLOGIK: (nicht nötig)\nMODELL: entfällt")[0]
+        self.assertEqual(parts, ["Dein or braucht zwei Vergleiche."])
+
     def test_density_limits_words(self):
         tutor.F_DENSE.write_text("20")
         long = " ".join("Wort%d." % i for i in range(60)) + " Wo?"
