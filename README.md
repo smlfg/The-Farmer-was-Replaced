@@ -1,8 +1,10 @@
 # The Farmer Was Replaced — Local Learning Companion
 
 Ein gesprochener Python-Tutor für *The Farmer Was Replaced* auf einem MacBook Pro M3 Max.
-**Spiel öffnen → Tutor ist dabei.** Er liest deinen Spielcode, sieht das Spielfenster, erklärt auf Deutsch
-(Piper „Thorsten“) etwa einmal pro Minute und hört dir per Sprechtaste zu. Du schreibst den Code **selbst**.
+**Spiel öffnen → Tutor ist dabei.** Er stellt sich beim Start einmal kurz vor und ist dann still. Er spricht nur,
+wenn du ihn fragst (Sprechtaste) oder wenn dein Code beim Ausführen einen Fehler wirft (aus `output.txt`
+des Spiels). Stimme: Piper „Thorsten“. Du schreibst den Code **selbst**. Eigene Impulse wie früher:
+`TUTOR_PROACTIVE=1`.
 
 Implementierungsauftrag: [CLAUDE.md](CLAUDE.md).
 

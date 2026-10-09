@@ -113,3 +113,12 @@ class SignalsAndContextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ErrorTriggerTest(unittest.TestCase):
+    def test_new_error_detected_once(self):
+        out = "[]\nError: Es wurde versucht, die Variable checklist zu lesen, bevor ihr ein Wert zugewiesen wurde.\nIn: ernte"
+        err, h = tutor.new_error(out, None)
+        self.assertTrue(err.startswith("Error: Es wurde versucht"))
+        self.assertIsNone(tutor.new_error(out, h)[0])  # derselbe Fehler nicht erneut
+        self.assertIsNone(tutor.new_error("[1, 2]\n", h)[0])  # normale Ausgabe ist kein Fehler

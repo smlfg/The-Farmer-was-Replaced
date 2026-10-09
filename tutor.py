@@ -16,6 +16,7 @@ CFG = dict(  # alles per Umgebungsvariable TUTOR_<NAME> überschreibbar
     continue_after=8,     # s Stille nach Sprachende, dann eigener Coach-Impuls (mit ~30 s Analyse ≈ 1/min)
     max_continues=1000,   # Coach-Impulse ohne Codeänderung (praktisch unbegrenzt: 1 pro Minute)
     analysis_timeout=180,
+    proactive=0,          # 0 = spricht nur auf Frage (Sprechtaste/antwort/now) oder bei Fehler beim Ausführen; 1 = eigene Impulse
     gap_festgefahren=30, gap_normal=40, gap_zuegig=50,  # s zwischen Teilen; wer festhängt, bekommt mehr Begleitung
     prefetch=0.2,         # nächste Analyse startet nach diesem Anteil der Lücke – auch während er noch spricht
     max_silence=40,       # s Stille, nach denen eine fertige Antwort nie mehr als „veraltet“ verworfen wird
@@ -41,6 +42,27 @@ GAME_DATA = Path.home() / "Library/Application Support/com.TheFarmerWasReplaced.
 DOCS = Path.home() / ("Library/Application Support/Steam/steamapps/common/The Farmer Was Replaced/"
                       "TheFarmerWasReplaced.app/Contents/Resources/Data/StreamingAssets/Languages/DE/docs")
 PROGRESS = HERE / "progress.md"
+OUTPUT = GAME_DATA / "output.txt"   # Ausgabe des Spiels beim Ausführen: print und Fehlermeldungen
+INTRO = ("Ich bin dein Coach für The Farmer Was Replaced. Ich melde mich nur, wenn du mich fragst: "
+         "rechte Wahltaste halten und sprechen. Und wenn dein Code beim Ausführen einen Fehler wirft.")
+
+
+def read_output():
+    try:
+        return OUTPUT.stat().st_mtime, OUTPUT.read_text(errors="replace")
+    except OSError:
+        return 0.0, ""
+
+
+def new_error(text, last_hash):
+    """Neue Fehlermeldung aus output.txt -> (gekürzter Fehlertext oder None, neuer Hash)."""
+    if "Error" not in text and "Fehler" not in text:
+        return None, last_hash
+    h = hashlib.md5(text.encode()).hexdigest()
+    if h == last_hash:
+        return None, last_hash
+    start = text.find("Error")
+    return text[start if start >= 0 else 0:][:900].strip(), h
 LABEL = "com.smlfg.tfwr-tutor"
 PLIST = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
 F_PAUSED, F_NOW, F_STILL, F_SAYPID = (STATE / n for n in ("paused", "now", "still", "say.pid"))
@@ -796,6 +818,11 @@ def session(gpid):
     mic_check = 0.0
     syntax_said = []          # Zeitpunkte gesprochener Syntax-Hinweise (Budget pro Stunde)
     notebook = load_notebook()  # überlebt Spielneustarts
+    out_mtime, out_text = read_output()
+    err_hash = hashlib.md5(out_text.encode()).hexdigest()  # alte Fehler vom letzten Mal nicht erneut melden
+    error_now = None
+    say(INTRO); log("Vorstellung gesprochen")
+    last_start = last_spoke = time.time()
     history, last_code = [], None
     fails = 0
     ask_t, forced_last = 0.0, False
@@ -803,6 +830,12 @@ def session(gpid):
         while game_pid() == gpid:
             time.sleep(0.5)
             now = time.time()
+            m_out = read_output()
+            if m_out[0] != out_mtime:
+                out_mtime, out_text = m_out
+                err, err_hash = new_error(out_text, err_hash)
+                if err:
+                    error_now = err; log("Fehler beim Ausführen erkannt: %s" % err.splitlines()[0][:100])
             if now - mic_check >= 30:
                 kill_orphan_recordings(ptt.rec.pid if ptt.rec else None); mic_check = now
             # --- Spracheingabe hat Vorrang
@@ -897,7 +930,7 @@ def session(gpid):
                 fails = 0
             # nächster Teil (CODE -> LOGIK -> MODELL) ohne Modellaufruf
             if parts and not speaking() and \
-                    (last_start == 0 or now - last_start >= gap_for(modus) or forced_last):
+                    (last_start == 0 or now - last_start >= gap_for(modus) or forced_last or not CFG["proactive"]):
                 text = parts.pop(0)
                 forced_last = False
                 with open(STATE / "spoken.txt", "a") as f:
@@ -926,6 +959,10 @@ def session(gpid):
                 reason = "ANTWORT DES LERNENDEN: %s" % answer_text
             elif forced:
                 reason = "jetzt erklären (vom Lernenden angefordert, nicht SKIP)"
+            elif error_now is not None and not talking:
+                reason = "FEHLER BEIM AUSFÜHREN (Spielausgabe output.txt):\n%s" % error_now
+            elif not CFG["proactive"]:
+                continue  # nur auf Frage oder bei Fehler sprechen
             elif len(parts) > 1:
                 continue  # erst die vorhandenen Teile sprechen; beim letzten schon vorausrechnen
             elif paused:
@@ -944,7 +981,7 @@ def session(gpid):
                 continue
             if not reason.startswith("weiter"):
                 continues = 0
-            urgent_now = forced or answer_text is not None or voice_text is not None
+            urgent_now = forced or answer_text is not None or voice_text is not None or error_now is not None
             shots_n += 1
             png = screenshot() if (urgent_now or shots_n % CFG["image_every"] == 1 or CFG["image_every"] <= 1) else None
             last_shot = now
@@ -952,6 +989,7 @@ def session(gpid):
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
                      notebook_line(notebook),
+                     "Letzte Spielausgabe (output.txt, beim Ausführen): %s" % (out_text.strip()[-600:] or "(leer)"),
                      "Syntax-Budget: noch %d Syntax-Hinweis(e) in dieser Stunde. Syntax nur, wenn er sonst nicht weiterkommt; "
                      "mehrere Syntaxfehler in EINEM Satz zusammenfassen." % max(0, CFG["syntax_per_hour"] - len([t for t in syntax_said if now - t < 3600]))]
             if DICTATION_DROPPED:
@@ -960,7 +998,8 @@ def session(gpid):
                 del DICTATION_DROPPED[:]
             pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
-            urgent = forced or answer_text is not None or voice_text is not None
+            urgent = forced or answer_text is not None or voice_text is not None or error_now is not None
+            error_now = None
             asked_prefetch = reason.startswith("weiter")
             voice_pending = voice_text is not None
             ask_t, asked_hash, forced_last = now, h, urgent
