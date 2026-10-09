@@ -45,3 +45,11 @@ Einstellbar per Umgebung (`TUTOR_INTERVAL`, `TUTOR_THINK_PAUSE`, `TUTOR_MODEL`, 
 
 Bildschirmaufnahme für den LaunchAgent-Python (`/usr/bin/python3` → Xcode-Python) erlauben,
 sonst läuft der Tutor ohne Bild und sagt das auch.
+
+## Tests
+
+Kernlogik-Tests (ohne Netzwerk, Spiel oder Sprachausgabe) mit dem System-Python 3.9:
+
+```bash
+/usr/bin/python3 -m unittest discover tests
+```
