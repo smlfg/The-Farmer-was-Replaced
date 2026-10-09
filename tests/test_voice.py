@@ -77,6 +77,21 @@ class SpeakableTest(unittest.TestCase):
         self.assertIn("a ist 3", t)
 
 
+class DictationTest(unittest.TestCase):
+    def test_dictation_dropped(self):
+        ans = ("CODE: Letzter Versuch. In main.py genau diese Zeilen tippen, ohne selbst umzudenken. max gleich "
+               "get world size Klammer auf Klammer zu. Leerzeile. while True Doppelpunkt.\n"
+               "MODELL: In Zeile 4 bewegst du die Drohne nach Norden. Was passiert in Zeile 5?")
+        parts = tutor.parse_parts(ans)[0]
+        self.assertEqual(len(parts), 1)
+        self.assertTrue(parts[0].startswith("In Zeile 4"))
+
+    def test_names_readable(self):
+        t = tutor.speakable("Nutze get_world_size() und Entities.Carrot")
+        self.assertIn("get world size", t)
+        self.assertNotIn("Entities", t)
+
+
 class SignalsAndContextTest(unittest.TestCase):
     def test_wipe_detected(self):
         now = time.time()

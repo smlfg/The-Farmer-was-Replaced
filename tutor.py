@@ -379,8 +379,20 @@ def parse(answer):
     return (shorten(text) or None), notes
 
 
+DICTATION = re.compile(r"klammer (auf|zu)|doppelpunkt|leerzeile|genau diese zeilen|zeilen? (ab)?tippen|"
+                       r"tippe (genau|folgend)|ohne selbst umzudenken|\b(ein|zwei|drei|vier) tabs?\b", re.I)
+
+
+def is_dictation(text):
+    """Diktierter Code nimmt ihm das Schreiben ab – solche Teile werden nie gesprochen."""
+    return len(DICTATION.findall(text)) >= 2
+
+
 def speakable(text):
     """Was trotz Prompt als Notiz durchrutscht, für die Stimme in Sprache übersetzen."""
+    text = re.sub(r"\b(Entities|Grounds|Items)\.", "", text)
+    text = re.sub(r"(\w)\(\)", r"\1", text)          # get_pos_x() -> get_pos_x
+    text = re.sub(r"(?<=\w)_(?=\w)", " ", text)       # get_pos_x -> get pos x (statt „getposx“)
     text = re.sub(r"\s*(→|->|=>)\s*", ", dann ", text)
     text = re.sub(r"\s*==\s*", " gleich ", text)
     text = re.sub(r"\s*!=\s*", " ungleich ", text)
@@ -403,6 +415,7 @@ def _clean(text):
 
 
 LEVELS = ("CODE", "LOGIK", "MODELL")
+DICTATION_DROPPED = []  # Zeitpunkte verworfener Diktate -> nächste Beobachtung erinnert Pi
 CONTROL = ("pause", "weiter", "langsamer", "schneller")
 
 
@@ -420,10 +433,15 @@ def parse_parts(answer):
         elif cur:
             blocks[cur] += "\n" + line
     limit = words_per_part()
-    parts = [shorten(_clean(blocks[k]), limit) for k in LEVELS
-             if _clean(blocks.get(k, "")) and not is_placeholder(_clean(blocks[k]))]
-    if not parts and _clean(blocks.get("SPRECHEN", "")):
-        parts = [shorten(_clean(blocks["SPRECHEN"]), max(limit, 60))]
+    raw = [_clean(blocks[k]) for k in LEVELS if _clean(blocks.get(k, "")) and not is_placeholder(_clean(blocks[k]))]
+    if not raw and _clean(blocks.get("SPRECHEN", "")):
+        raw = [_clean(blocks["SPRECHEN"])]
+    dictated = [t for t in raw if is_dictation(t)]
+    if dictated:
+        log("Diktat verworfen: %s…" % dictated[0][:80])
+        DICTATION_DROPPED.append(time.time())
+    parts = [shorten(t, limit) for t in raw if not is_dictation(t)]
+
     modus = (blocks.get("MODUS", "normal").strip().split() or ["normal"])[0].lower()
     modus = {"zuegig": "zügig"}.get(modus, modus)
     if modus not in ("festgefahren", "normal", "zügig"):
@@ -916,6 +934,10 @@ def session(gpid):
                      "Lernsignale: " + json.dumps(learning_signals(history, now), ensure_ascii=False),
                      "Gewünschte Länge: höchstens %d Wörter pro Teil, ein kleiner Gedanke pro Teil." % words_per_part(),
                      notebook_line(notebook)]
+            if DICTATION_DROPPED:
+                extra.append("HINWEIS: Deine letzte Antwort wurde NICHT gesprochen, weil sie Code diktiert hat. "
+                             "Erkläre in Worten, er schreibt selbst.")
+                del DICTATION_DROPPED[:]
             pi.ask(observation(reason, st, prev, png, prev is None, extra), png)
             log("analysiere: %s%s" % (reason[:80], "" if png else " (ohne Bild)"))
             urgent = forced or answer_text is not None or voice_text is not None
