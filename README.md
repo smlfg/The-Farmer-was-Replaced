@@ -86,6 +86,41 @@ Spiel läuft ─► tutor.py (Wächter, lokal)
 Spracherkennung, Stimme und Steuerung bleiben lokal. Ein lokales Vision-Modell war zu langsam
 (362 s statt 28 s, Format gebrochen): [docs/LOCAL_MODEL_EVAL.md](docs/LOCAL_MODEL_EVAL.md).
 
+## Lokaler Fallback ohne Cloud-API
+
+**Normalbetrieb:** Pi/MiniMax bleibt der ausführliche Tutor. Lehnt die API eine Anfrage ab,
+bricht Pi ab oder antwortet länger als 40 Sekunden nicht, wechselt der Tutor automatisch
+zur lokalen Lernbegleitung. Nach 180 Sekunden versucht er die Cloud erneut.
+
+**Lokal:** Zuerst wird ein Ollama-Modell nur unter `127.0.0.1` angesprochen
+(Standard: `qwen3:8b`). Ist Ollama nicht erreichbar oder antwortet das Modell nicht
+rechtzeitig, gibt ein kleines regelbasiertes Modul eine einzelne konkrete Denkhilfe anhand
+des Codes und des gespeicherten Lernziels. Es löst die Aufgabe nicht automatisch.
+Die lokale Variante kann Code, aber **keine Screenshots** interpretieren.
+Es findet dabei keine Netzverbindung außerhalb des Macs statt.
+
+Manueller Offlinebetrieb (keine Cloud-Anfrage, auch beim Start nicht):
+
+```bash
+TUTOR_OFFLINE=1 python3 tutor.py run
+```
+
+Optional, vor dem Start `ollama serve` und `ollama pull qwen3:8b` ausführen.
+Falls Ollama nicht installiert ist, funktioniert trotzdem der regelbasierte Modus.
+
+| Einstellung | Standard | Zweck |
+|---|---|---|
+| `TUTOR_OFFLINE` | `0` | `1` erzwingt lokale Begleitung |
+| `TUTOR_API_FAIL_TIMEOUT` | `40` | Sekunden bis zum automatischen Wechsel |
+| `TUTOR_API_RETRY` | `180` | Sekunden bis zum nächsten Cloud-Versuch |
+| `TUTOR_LOCAL_MODEL` | `qwen3:8b` | Lokales Ollama-Modell |
+| `TUTOR_LOCAL_URL` | `http://127.0.0.1:11434/api/generate` | Nur Loopback erlaubt |
+| `TUTOR_LOCAL_TIMEOUT` | `25` | Sekunden bis zur regelbasierten Hilfe |
+
+Die fokussierte Datei wird aus dem Änderungszeitpunkt der gespeicherten Spiel-Dateien
+ermittelt. Das ist eine **Heuristik**, keine verlässliche Erkennung des sichtbaren Editor-Tabs.
+Der bisherige Cloud-Tutor und seine ausführliche Didaktik bleiben unverändert.
+
 ## Konfiguration
 
 Alles per Umgebungsvariable `TUTOR_<NAME>` (im LaunchAgent unter `EnvironmentVariables`), siehe `CFG` oben in
