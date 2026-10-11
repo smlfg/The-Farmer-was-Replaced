@@ -34,6 +34,7 @@ PLIST = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
 F_PAUSED, F_NOW, F_STILL, F_SAYPID = (STATE / n for n in ("paused", "now", "still", "say.pid"))
 PTT_EVENTS = STATE / "ptt-events.jsonl"
 PTT_TRANSCRIBE = STATE / "ptt-transcribe"
+PTT_HOLD_TIMEOUT = 60  # s ohne up/error: Aufnahme-Latch lösen, Sitzung läuft weiter
 
 
 def log(msg):
@@ -183,6 +184,8 @@ class Pi:
         self.events = queue.Queue()
         threading.Thread(target=self._reader, daemon=True).start()
         self.busy = False
+        self.reply_seq = 0
+        self.pending_last = None  # id der offenen get_last-Anfrage, sonst None
         log("Pi gestartet (Sitzung %s, Modell %s)" % (sid, CFG["model"]))
 
     def _reader(self):
@@ -216,8 +219,11 @@ class Pi:
                 log("Pi lehnt ab: %s" % e.get("error"))
             if t == "agent_settled" and self.busy:
                 self.busy = False
-                self.send({"type": "get_last_assistant_text", "id": "last"})
-            if t == "response" and e.get("id") == "last":
+                self.reply_seq += 1
+                self.pending_last = "last-%d" % self.reply_seq
+                self.send({"type": "get_last_assistant_text", "id": self.pending_last})
+            if t == "response" and self.pending_last and e.get("id") == self.pending_last:
+                self.pending_last = None
                 return (e.get("data") or {}).get("text") or ""
         return None
 
@@ -225,6 +231,10 @@ class Pi:
         if self.busy:
             self.send({"type": "abort"})
             self.busy = False
+        # Laufende Antwort verwerfen. Eine schon abgeschickte get_last-Antwort
+        # trägt die alte id und wird von poll nicht mehr als Ergebnis genommen.
+        # _eof bleibt in der Queue, damit ein totes Pi neu gestartet wird.
+        self.pending_last = None
 
     def close(self):
         try:
@@ -421,6 +431,9 @@ def session(gpid):
     pi, prev, sent_hash = Pi(), None, None
     voice_events = VoiceEvents()
     recording = recognizing = False
+    awaiting_up = False  # down gesehen; spätes up auch nach Timeout noch annehmen
+    hold_since = None
+    voice_gen = 0
     transcription = queue.Queue()
     interrupted_text = None
     speaking_text = None
@@ -440,34 +453,55 @@ def session(gpid):
             for event in voice_events.read():
                 kind = event.get("event")
                 if kind == "down":
+                    voice_gen += 1  # laufende Transkription gehört zur vorherigen Aufnahme
                     recording = True
+                    recognizing = False
+                    awaiting_up = True
+                    hold_since = now
                     hush(); pi.abort()
-                    while not pi.events.empty():
-                        try: pi.events.get_nowait()
-                        except queue.Empty: break
                     interrupted_text = speaking_text
                     speaking_text = None
                     answer_text = None
                     forced = False
                 elif kind == "recording":
-                    recording = True
-                elif kind == "up" and recording:
+                    if awaiting_up and hold_since is not None:
+                        recording = True
+                elif kind == "up" and awaiting_up:
+                    awaiting_up = False
                     recording = False
-                    recognizing = True
-                    threading.Thread(target=lambda path=event.get("detail", ""): transcription.put(transcribe_ptt(path)), daemon=True).start()
+                    hold_since = None
+                    path = event.get("detail") or ""
+                    gen = voice_gen
+                    if path:
+                        recognizing = True
+                        threading.Thread(
+                            target=lambda path=path, gen=gen: transcription.put((gen, transcribe_ptt(path))),
+                            daemon=True).start()
                 elif kind == "error":
                     recording = False
+                    awaiting_up = False
+                    hold_since = None
                     log("PTT: " + event.get("detail", "Fehler"))
             if recognizing:
-                try: voice_text = transcription.get_nowait()
-                except queue.Empty: continue
-                recognizing = False
-                if voice_text:
-                    answer_text = voice_text
-                    if interrupted_text:
-                        answer_text += "\n[Unterbrochene Erklärung, möglicherweise nur teilweise gehört: " + interrupted_text + "]"
-                    log("PTT: Frage empfangen")
-                interrupted_text = None
+                while True:
+                    try:
+                        gen, voice_text = transcription.get_nowait()
+                    except queue.Empty:
+                        break
+                    if gen != voice_gen:
+                        continue  # älteres oder überschriebenes Ergebnis
+                    recognizing = False
+                    if voice_text:
+                        answer_text = voice_text
+                        if interrupted_text:
+                            answer_text += "\n[Unterbrochene Erklärung, möglicherweise nur teilweise gehört: " + interrupted_text + "]"
+                        log("PTT: Frage empfangen")
+                    interrupted_text = None
+                    break
+            if recording and hold_since is not None and now - hold_since >= PTT_HOLD_TIMEOUT:
+                log("PTT: keine Ende-Meldung, Sitzung läuft weiter")
+                recording = False
+                hold_since = None
             if recording or recognizing:
                 continue
 

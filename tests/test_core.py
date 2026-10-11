@@ -1,4 +1,5 @@
 """Tests für die Kernlogik von tutor.py – ohne Netzwerk, Spiel oder Sprachausgabe."""
+import queue
 import sys
 import tempfile
 import unittest
@@ -170,6 +171,37 @@ class GamePidTest(unittest.TestCase):
         with mock.patch.object(tutor, "subprocess") as sub:
             sub.run = self._fake_run("111 222 333", ps)
             self.assertEqual(tutor.game_pid(), 222)
+
+
+class PiInterruptTest(unittest.TestCase):
+    def make(self):
+        pi = tutor.Pi.__new__(tutor.Pi)
+        pi.events = queue.Queue()
+        pi.busy = True
+        pi.pending_last = None
+        pi.reply_seq = 0
+        pi.send = mock.Mock()
+        return pi
+
+    def test_abort_drops_late_reply_but_keeps_eof(self):
+        pi = self.make()
+        pi.events.put({"type": "agent_settled"})
+        self.assertIsNone(pi.poll())
+        sent = pi.send.call_args[0][0]
+        self.assertEqual(sent["type"], "get_last_assistant_text")
+        pi.abort()
+        pi.events.put({"type": "response", "id": sent["id"], "data": {"text": "alte Antwort"}})
+        pi.events.put({"type": "_eof"})
+        with self.assertRaises(RuntimeError):
+            pi.poll()
+
+    def test_older_reply_does_not_satisfy_newer_request(self):
+        pi = self.make()
+        pi.busy = False
+        pi.pending_last = "last-2"
+        pi.events.put({"type": "response", "id": "last-1", "data": {"text": "alt"}})
+        self.assertIsNone(pi.poll())
+        self.assertEqual(pi.pending_last, "last-2")
 
 
 if __name__ == "__main__":
